@@ -14,7 +14,6 @@ jobs:
       ARCH: arm64
       SUBARCH: arm64
       CROSS_COMPILE: aarch64-linux-gnu-
-      # KernelSU-Next version: 30000 + 277 (git commits at checkout) + 60
       KSU_VERSION: 30337
 
     steps:
@@ -40,30 +39,25 @@ jobs:
 
       - name: Set up kernel build
         run: |
-          # Prevent version suffix
           touch .scmversion
-
-          # Force KSU_VERSION in Kbuild since KernelSU-Next is inlined (no .git)
           sed -i "s/KSU_VERSION_FALLBACK := 1/KSU_VERSION_FALLBACK := ${KSU_VERSION}/" \
             KernelSU-Next/kernel/Kbuild
           sed -i "s/KSU_VERSION_TAG_FALLBACK := v0.0.1/KSU_VERSION_TAG_FALLBACK := v3.1.0/" \
             KernelSU-Next/kernel/Kbuild
 
       - name: Generate defconfig
-        run: |
-          make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- rosemary_defconfig
+        run: make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- rosemary_defconfig
 
       - name: Build kernel
+        shell: bash
         run: |
           set -eo pipefail
           make O=out -j$(nproc) \
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             2>&1 | tee build.log
-          # Verify kernel image was produced
           ls -la out/arch/arm64/boot/Image* || {
             echo "ERROR: No kernel image produced!"
-            echo "=== Last 100 lines of build log ==="
             tail -100 build.log
             exit 1
           }
@@ -78,42 +72,18 @@ jobs:
       - name: Package with AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
-
-          # Copy kernel image
-          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/ 2>/dev/null || \
-          cp out/arch/arm64/boot/Image.gz AnyKernel3/ 2>/dev/null || \
-          cp out/arch/arm64/boot/Image AnyKernel3/
-
-          # Configure AnyKernel3
-          cat > AnyKernel3/anykernel.sh << 'AKEOF'
-# AnyKernel3 Ramdisk Mod Script
-# osm0sis @ xda-developers
-
-properties() { '
-kernel.string=KernelSU-Next Kernel for Rosemary
-do.devicecheck=1
-do.modules=0
-do.systemless=1
-do.cleanup=1
-do.cleanuponabort=0
-device.name1=rosemary
-device.name2=secret
-device.name3=maltose
-supported.versions=11
-'; }
-
-block=/dev/block/platform/bootdevice/by-name/boot;
-is_slot_device=0;
-ramdisk_compression=auto;
-
-. tools/ak3-core.sh;
-
-dump_boot;
-
-write_boot;
-AKEOF
-
+          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/ 2>/dev/null \
+            || cp out/arch/arm64/boot/Image.gz AnyKernel3/ 2>/dev/null \
+            || cp out/arch/arm64/boot/Image AnyKernel3/
           cd AnyKernel3
+          sed -i 's|do.devicecheck=1|do.devicecheck=1|' anykernel.sh
+          sed -i 's|device.name1=.*|device.name1=rosemary|' anykernel.sh
+          sed -i 's|device.name2=.*|device.name2=secret|' anykernel.sh
+          sed -i '/device.name3/d' anykernel.sh
+          sed -i '/device.name2/a device.name3=maltose' anykernel.sh
+          sed -i 's|supported.versions=.*|supported.versions=11|' anykernel.sh
+          sed -i 's|kernel.string=.*|kernel.string=KernelSU-Next Kernel for Rosemary|' anykernel.sh
+          sed -i 's|block=.*|block=/dev/block/platform/bootdevice/by-name/boot;|' anykernel.sh
           zip -r9 "../KernelSU-Next-v3.1.0-rosemary-KSU${KSU_VERSION}.zip" \
             * -x .git README.md *placeholder
 
