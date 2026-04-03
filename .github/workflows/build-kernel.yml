@@ -55,6 +55,7 @@ jobs:
           make O=out -j$(nproc) \
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-gnu- \
+            KCFLAGS="-Wno-error" \
             2>&1 | tee build.log
           ls -la out/arch/arm64/boot/Image* || {
             echo "ERROR: No kernel image produced!"

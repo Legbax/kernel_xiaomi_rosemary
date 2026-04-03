@@ -961,23 +961,6 @@ KBUILD_CFLAGS   += $(call cc-option,-Werror=incompatible-pointer-types)
 # Require designated initializers for all marked structures
 KBUILD_CFLAGS   += $(call cc-option,-Werror=designated-init)
 
-# Downgrade GCC 11+ warnings that break vendor code compiled with -Werror
-# These are harmless warnings in pre-existing MediaTek/vendor code that only
-# became errors with newer GCC versions (the original Android toolchain is clang)
-KBUILD_CFLAGS   += $(call cc-option,-Wno-error=address)
-KBUILD_CFLAGS   += $(call cc-option,-Wno-error=misleading-indentation)
-KBUILD_CFLAGS   += $(call cc-option,-Wno-error=stringop-truncation)
-KBUILD_CFLAGS   += $(call cc-option,-Wno-error=restrict)
-KBUILD_CFLAGS   += $(call cc-option,-Wno-error=array-bounds)
-KBUILD_CFLAGS   += $(call cc-option,-Wno-error=stringop-overflow)
-KBUILD_CFLAGS   += $(call cc-option,-Wno-error=format-overflow)
-KBUILD_CFLAGS   += $(call cc-option,-Wno-error=format-truncation)
-KBUILD_CFLAGS   += $(call cc-option,-Wno-error=sizeof-pointer-memaccess)
-KBUILD_CFLAGS   += $(call cc-option,-Wno-error=maybe-uninitialized)
-KBUILD_CFLAGS   += $(call cc-option,-Wno-error=unused-function)
-KBUILD_CFLAGS   += $(call cc-option,-Wno-error=unused-variable)
-KBUILD_CFLAGS   += $(call cc-option,-Wno-error=pointer-compare)
-
 # change __FILE__ to the relative path from the srctree
 KBUILD_CFLAGS	+= $(call cc-option,-fmacro-prefix-map=$(srctree)/=)
 
