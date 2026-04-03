@@ -49,24 +49,34 @@ jobs:
           sed -i "s/KSU_VERSION_TAG_FALLBACK := v0.0.1/KSU_VERSION_TAG_FALLBACK := v3.1.0/" \
             KernelSU-Next/kernel/Kbuild
 
+      - name: Generate defconfig
+        run: |
+          make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- rosemary_defconfig
+
       - name: Build kernel
         run: |
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-
-          # Generate .config
-          make O=out rosemary_defconfig
-
-          # Build
+          set -eo pipefail
           make O=out -j$(nproc) \
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             2>&1 | tee build.log
+          # Verify kernel image was produced
+          ls -la out/arch/arm64/boot/Image* || {
+            echo "ERROR: No kernel image produced!"
+            echo "=== Last 100 lines of build log ==="
+            tail -100 build.log
+            exit 1
+          }
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
 
       - name: Package with AnyKernel3
         run: |
-          # Clone AnyKernel3
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
 
           # Copy kernel image
@@ -76,36 +86,33 @@ jobs:
 
           # Configure AnyKernel3
           cat > AnyKernel3/anykernel.sh << 'AKEOF'
-          # AnyKernel3 Ramdisk Mod Script
-          # osm0sis @ xda-developers
+# AnyKernel3 Ramdisk Mod Script
+# osm0sis @ xda-developers
 
-          properties() { '
-          kernel.string=KernelSU-Next Kernel for Rosemary
-          do.devicecheck=1
-          do.modules=0
-          do.systemless=1
-          do.cleanup=1
-          do.cleanuponabort=0
-          device.name1=rosemary
-          device.name2=secret
-          device.name3=maltose
-          supported.versions=11
-          '; }
+properties() { '
+kernel.string=KernelSU-Next Kernel for Rosemary
+do.devicecheck=1
+do.modules=0
+do.systemless=1
+do.cleanup=1
+do.cleanuponabort=0
+device.name1=rosemary
+device.name2=secret
+device.name3=maltose
+supported.versions=11
+'; }
 
-          block=/dev/block/platform/bootdevice/by-name/boot;
-          is_slot_device=0;
-          ramdisk_compression=auto;
+block=/dev/block/platform/bootdevice/by-name/boot;
+is_slot_device=0;
+ramdisk_compression=auto;
 
-          . tools/ak3-core.sh;
+. tools/ak3-core.sh;
 
-          set_perm_recursive 0 0 755 644 $ramdisk_dir
+dump_boot;
 
-          dump_boot;
+write_boot;
+AKEOF
 
-          write_boot;
-          AKEOF
-
-          # Create zip
           cd AnyKernel3
           zip -r9 "../KernelSU-Next-v3.1.0-rosemary-KSU${KSU_VERSION}.zip" \
             * -x .git README.md *placeholder
