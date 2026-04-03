@@ -44,9 +44,11 @@ jobs:
             KernelSU-Next/kernel/Kbuild
           sed -i "s/KSU_VERSION_TAG_FALLBACK := v0.0.1/KSU_VERSION_TAG_FALLBACK := v3.1.0/" \
             KernelSU-Next/kernel/Kbuild
-          # Strip -Werror from all vendor Makefiles (GCC 11+ produces warnings
-          # that the original clang toolchain didn't, breaking -Werror builds)
-          find drivers/ -name Makefile -exec sed -i 's/-Werror//g' {} +
+          # Strip standalone -Werror from ALL Makefiles (GCC 11+ produces
+          # warnings that the original clang toolchain didn't)
+          # Preserve -Werror-implicit-function-declaration and -Werror=xxx
+          find . -name Makefile -not -path './.git/*' -exec \
+            sed -i 's/-Werror[[:space:]]/ /g; s/-Werror$//g' {} +
 
       - name: Generate defconfig
         run: make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- rosemary_defconfig
