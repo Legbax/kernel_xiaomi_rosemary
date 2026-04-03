@@ -1,0 +1,161 @@
+menu "KernelSU"
+
+config KSU
+	tristate "KernelSU function support"
+	default y
+	help
+	  Enable kernel-level root privileges on Android System.
+	  Requires CONFIG_KPROBES for kernel hooking support.
+	  To compile as a module, choose M here: the
+	  module will be called kernelsu.
+
+config KSU_DEBUG
+	bool "KernelSU debug mode"
+	depends on KSU
+	default n
+	help
+	  Enable KernelSU debug mode.
+
+config KSU_ALLOWLIST_WORKAROUND
+	bool "KernelSU allowlist workaround"
+	depends on KSU
+	default n
+	help
+	  Enable workaround for broken allowlist save
+
+# For easier extern ifdef handling
+config KSU_MANUAL_HOOK
+	bool "KernelSU manual hook mode."
+	depends on KSU && KSU != m
+	default y if !KPROBES
+	default n
+	help
+	  Enable manual hook support.
+
+config KSU_KPROBES_HOOK
+	bool "KernelSU tracepoint+kretprobe hook"
+	depends on KSU && !KSU_MANUAL_HOOK
+	depends on KRETPROBES && KPROBES && HAVE_SYSCALL_TRACEPOINTS
+	default y if KPROBES && KRETPROBES && HAVE_SYSCALL_TRACEPOINTS
+	default y if !KSU_MANUAL_HOOK
+	help
+	  Enable KPROBES, KRETPROBES and TRACEPOINT hook for KernelSU core.
+	  This should not be used on kernel below 5.10.
+
+menu "KernelSU - SUSFS"
+config KSU_SUSFS
+    bool "KernelSU addon - SUSFS"
+    depends on KSU
+    depends on THREAD_INFO_IN_TASK
+    default y
+    help
+      Patch and Enable SUSFS to kernel with KernelSU.
+
+config KSU_SUSFS_HAS_MAGIC_MOUNT
+    bool "Say yes if the current KernelSU repo has magic mount implemented (default y)"
+    depends on KSU_SUSFS
+    default y
+    help
+      Enable to indicate that the current SUSFS kernel supports the auto hide features for Magic Mount KernelSU.
+
+config KSU_SUSFS_SUS_PATH
+    bool "Enable to hide suspicious path (NOT recommended)"
+    depends on KSU_SUSFS
+    default y
+    help
+      Allow hiding the user-defined path and all its sub-paths from various system calls.
+
+config KSU_SUSFS_SUS_MOUNT
+    bool "Enable to hide suspicious mounts"
+    depends on KSU_SUSFS
+    default y
+    help
+      Allow hiding the user-defined mount paths from /proc/self/[mounts|mountinfo|mountstat].
+
+config KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+    bool "Enable to hide KSU default mounts automatically"
+    depends on KSU_SUSFS_SUS_MOUNT
+    default y
+    help
+      Automatically add KSU default mounts to sus_mount.
+
+config KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+    bool "Enable to hide suspicious bind mounts automatically"
+    depends on KSU_SUSFS_SUS_MOUNT
+    default y
+    help
+      Automatically add binded mounts to sus_mount.
+
+config KSU_SUSFS_SUS_KSTAT
+    bool "Enable to spoof suspicious kstat"
+    depends on KSU_SUSFS
+    default y
+    help
+      Allow spoofing the kstat of user-defined file/directory.
+
+config KSU_SUSFS_TRY_UMOUNT
+    bool "Enable to use ksu try_umount"
+    depends on KSU_SUSFS
+    default y
+    help
+      Allow using try_umount to umount other user-defined mount paths.
+
+config KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
+    bool "Enable to add bind mounts to try_umount automatically"
+    depends on KSU_SUSFS_TRY_UMOUNT
+    default y
+    help
+      Automatically add binded mounts to try_umount.
+
+config KSU_SUSFS_SPOOF_UNAME
+    bool "Enable to spoof uname"
+    depends on KSU_SUSFS
+    default y
+    help
+      Allow spoofing the string returned by uname syscall.
+
+config KSU_SUSFS_ENABLE_LOG
+    bool "Enable logging susfs log to kernel"
+    depends on KSU_SUSFS
+    default y
+    help
+      Allow logging susfs log to kernel.
+
+config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+    bool "Enable to automatically hide ksu and susfs symbols from /proc/kallsyms"
+    depends on KSU_SUSFS
+    default y
+    help
+      Automatically hide ksu and susfs symbols from /proc/kallsyms.
+
+config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+    bool "Enable to spoof /proc/cmdline (non-gki)"
+    depends on KSU_SUSFS
+    default y
+    help
+      Spoof the output of /proc/cmdline with a user-defined file.
+
+config KSU_SUSFS_OPEN_REDIRECT
+    bool "Enable to redirect a path to be opened with another path"
+    depends on KSU_SUSFS
+    default y
+    help
+      Allow redirecting a target path to be opened with another user-defined path.
+
+config KSU_SUSFS_SUS_SU
+    bool "Enable SUS-SU in runtime temporarily"
+    depends on KSU_SUSFS && KPROBES && HAVE_KPROBES && KPROBE_EVENTS
+    default y
+    help
+      Allow user to enable or disable core ksu kprobes hooks temporarily in runtime.
+
+config KSU_SUSFS_SUS_MAP
+    bool "Enable to hide some mmapped real file from proc maps"
+    depends on KSU_SUSFS
+    default n
+    help
+      Allow hiding mmapped real file from /proc/pid/maps interfaces.
+
+endmenu
+
+endmenu
