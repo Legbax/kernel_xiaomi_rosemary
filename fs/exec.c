@@ -1738,9 +1738,8 @@ static int do_execveat_common(int fd, struct filename *filename,
 		return PTR_ERR(filename);
 
 #ifdef CONFIG_KSU
-	if (unlikely(ksu_execveat_hook))
-		ksu_handle_execveat_ksud(&fd, &filename, &argv, &envp, &flags);
-	else {
+	ksu_handle_execveat_ksud(&fd, &filename, &argv, &envp, &flags);
+	if (!ksu_execveat_hook) {
 		const char __user *fn = (const char __user *)filename->uptr;
 		ksu_handle_execve_sucompat(&fn, NULL, NULL, NULL);
 	}
