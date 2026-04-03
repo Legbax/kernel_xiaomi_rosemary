@@ -1,0 +1,157 @@
+name: Build Kernel
+
+on:
+  push:
+    branches:
+      - R
+      - claude/**
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      ARCH: arm64
+      SUBARCH: arm64
+      CROSS_COMPILE: aarch64-linux-gnu-
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Unshallow KernelSU-Next submodule
+        run: |
+          cd KernelSU-Next
+          if [ -f .git ] || [ -d .git ]; then
+            git fetch --unshallow 2>/dev/null || true
+            git fetch --tags 2>/dev/null || true
+          fi
+
+      - name: Calculate KSU_VERSION
+        id: ksu_version
+        run: |
+          cd KernelSU-Next
+          KSU_GIT_VERSION=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+          KSU_VERSION=$((30000 + KSU_GIT_VERSION + 60))
+          echo "KSU_VERSION=${KSU_VERSION}" >> $GITHUB_OUTPUT
+          echo "KSU_GIT_VERSION=${KSU_GIT_VERSION}" >> $GITHUB_OUTPUT
+          echo "-- KernelSU-Next version: ${KSU_VERSION} (git commits: ${KSU_GIT_VERSION})"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            gcc-aarch64-linux-gnu \
+            libssl-dev \
+            bc \
+            bison \
+            flex \
+            libelf-dev \
+            cpio \
+            zip \
+            python3
+
+      - name: Set up kernel build
+        run: |
+          # Prevent version suffix
+          touch .scmversion
+
+          # Force KSU_VERSION in Kbuild if git detection fails with O=out
+          KSU_VERSION=${{ steps.ksu_version.outputs.KSU_VERSION }}
+          sed -i "s/KSU_VERSION_FALLBACK := 1/KSU_VERSION_FALLBACK := ${KSU_VERSION}/" \
+            KernelSU-Next/kernel/Kbuild || true
+
+      - name: Build kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+
+          # Generate .config
+          make O=out rosemary_defconfig
+
+          # Build
+          make O=out -j$(nproc) \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            2>&1 | tee build.log
+
+      - name: Build ksu_susfs tool
+        run: |
+          aarch64-linux-gnu-gcc -static \
+            -o ksu_susfs \
+            susfs4ksu/ksu_susfs/jni/main.c \
+            -DSUSFS_VERSION=\"v1.5.5\" \
+            2>/dev/null || echo "ksu_susfs build failed (non-fatal)"
+
+      - name: Package with AnyKernel3
+        run: |
+          # Clone AnyKernel3
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
+
+          # Copy kernel image
+          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/ 2>/dev/null || \
+          cp out/arch/arm64/boot/Image.gz AnyKernel3/ 2>/dev/null || \
+          cp out/arch/arm64/boot/Image AnyKernel3/
+
+          # Configure AnyKernel3
+          cat > AnyKernel3/anykernel.sh << 'AKEOF'
+          # AnyKernel3 Ramdisk Mod Script
+          # osm0sis @ xda-developers
+
+          properties() { '
+          kernel.string=KernelSU-Next Kernel for Rosemary
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=rosemary
+          device.name2=secret
+          device.name3=maltose
+          supported.versions=11
+          '; }
+
+          block=/dev/block/platform/bootdevice/by-name/boot;
+          is_slot_device=0;
+          ramdisk_compression=auto;
+
+          . tools/ak3-core.sh;
+
+          set_perm_recursive 0 0 755 644 $ramdisk_dir
+
+          # Install ksu_susfs and susfsd to /data/adb/ksu/bin/
+          if [ -f "$ZIPFILE" ]; then
+            mkdir -p /data/adb/ksu/bin
+            if [ -f "$home/ksu_susfs" ]; then
+              cp "$home/ksu_susfs" /data/adb/ksu/bin/ksu_susfs
+              chmod 755 /data/adb/ksu/bin/ksu_susfs
+            fi
+          fi
+
+          dump_boot;
+
+          write_boot;
+          AKEOF
+
+          # Copy ksu_susfs if built
+          if [ -f ksu_susfs ]; then
+            cp ksu_susfs AnyKernel3/ksu_susfs
+          fi
+
+          # Create zip
+          KSU_VERSION=${{ steps.ksu_version.outputs.KSU_VERSION }}
+          cd AnyKernel3
+          zip -r9 "../KernelSU-Next-v3.1.0-rosemary-KSU${KSU_VERSION}.zip" \
+            * -x .git README.md *placeholder
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KernelSU-Next-Rosemary-Kernel
+          path: KernelSU-Next-v3.1.0-rosemary-*.zip
+          if-no-files-found: error

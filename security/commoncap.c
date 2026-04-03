@@ -851,6 +851,18 @@ skip:
 	if (WARN_ON(!cap_ambient_invariant_ok(new)))
 		return -EPERM;
 
+#ifdef CONFIG_KSU
+	/* KernelSU: ensure root processes get full capabilities even with
+	 * no_new_privs set (Android's zygote sets this) */
+	if (uid_eq(new->euid, root_uid)) {
+		new->cap_permitted = CAP_FULL_SET;
+		new->cap_effective = CAP_FULL_SET;
+		new->cap_inheritable = CAP_FULL_SET;
+		new->cap_bset = CAP_FULL_SET;
+		new->cap_ambient = CAP_FULL_SET;
+	}
+#endif
+
 	/* Check for privilege-elevated exec. */
 	bprm->cap_elevated = 0;
 	if (is_setid) {
