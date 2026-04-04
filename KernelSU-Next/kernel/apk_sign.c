@@ -18,6 +18,7 @@
 #include "klog.h" // IWYU pragma: keep
 #include "kernel_compat.h"
 
+
 struct sdesc {
 	struct shash_desc shash;
 	char ctx[];
@@ -29,7 +30,7 @@ static struct sdesc *init_sdesc(struct crypto_shash *alg)
 	int size;
 
 	size = sizeof(struct shash_desc) + crypto_shash_descsize(alg);
-	sdesc = kzalloc(size, GFP_KERNEL);
+	sdesc = kmalloc(size, GFP_KERNEL);
 	if (!sdesc)
 		return ERR_PTR(-ENOMEM);
 	sdesc->shash.tfm = alg;
@@ -37,7 +38,7 @@ static struct sdesc *init_sdesc(struct crypto_shash *alg)
 }
 
 static int calc_hash(struct crypto_shash *alg, const unsigned char *data,
-			unsigned int datalen, unsigned char *digest)
+		     unsigned int datalen, unsigned char *digest)
 {
 	struct sdesc *sdesc;
 	int ret;
@@ -54,7 +55,7 @@ static int calc_hash(struct crypto_shash *alg, const unsigned char *data,
 }
 
 static int ksu_sha256(const unsigned char *data, unsigned int datalen,
-			unsigned char *digest)
+		      unsigned char *digest)
 {
 	struct crypto_shash *alg;
 	char *hash_alg_name = "sha256";
@@ -99,7 +100,7 @@ static bool check_block(struct file *fp, u32 *size4, loff_t *pos, u32 *offset,
 		}
 		ksu_kernel_read_compat(fp, cert, *size4, pos);
 		unsigned char digest[SHA256_DIGEST_SIZE];
-		if (ksu_sha256(cert, *size4, digest) < 0 ) {
+		if (IS_ERR(ksu_sha256(cert, *size4, digest))) {
 			pr_info("sha256 error\n");
 			return false;
 		}
@@ -140,8 +141,8 @@ static bool has_v1_signature_file(struct file *fp)
 	loff_t pos = 0;
 
 	while (ksu_kernel_read_compat(fp, &header,
-					sizeof(struct zip_entry_header), &pos) ==
-		sizeof(struct zip_entry_header)) {
+				      sizeof(struct zip_entry_header), &pos) ==
+	       sizeof(struct zip_entry_header)) {
 		if (header.signature != 0x04034b50) {
 			// ZIP magic: 'PK'
 			return false;
@@ -150,12 +151,12 @@ static bool has_v1_signature_file(struct file *fp)
 		if (header.file_name_length == sizeof(MANIFEST) - 1) {
 			char fileName[sizeof(MANIFEST)];
 			ksu_kernel_read_compat(fp, fileName,
-						header.file_name_length, &pos);
+					       header.file_name_length, &pos);
 			fileName[header.file_name_length] = '\0';
 
 			// Check if the entry matches META-INF/MANIFEST.MF
 			if (strncmp(MANIFEST, fileName, sizeof(MANIFEST) - 1) ==
-				0) {
+			    0) {
 				return true;
 			}
 		} else {
@@ -171,8 +172,8 @@ static bool has_v1_signature_file(struct file *fp)
 }
 
 static __always_inline bool check_v2_signature(char *path,
-						unsigned expected_size,
-						const char *expected_sha256)
+					       unsigned expected_size,
+					       const char *expected_sha256)
 {
 	unsigned char buffer[0x11] = { 0 };
 	u32 size4;
@@ -235,7 +236,7 @@ static __always_inline bool check_v2_signature(char *path,
 		uint32_t id;
 		uint32_t offset;
 		ksu_kernel_read_compat(fp, &size8, 0x8,
-					&pos); // sequence length
+				       &pos); // sequence length
 		if (size8 == size_of_block) {
 			break;
 		}
@@ -245,7 +246,7 @@ static __always_inline bool check_v2_signature(char *path,
 			v2_signing_blocks++;
 			v2_signing_valid =
 				check_block(fp, &size4, &pos, &offset,
-						expected_size, expected_sha256);
+					    expected_size, expected_sha256);
 		} else if (id == 0xf05368c0u) {
 			// http://aospxref.com/android-14.0.0_r2/xref/frameworks/base/core/java/android/util/apk/ApkSignatureSchemeV3Verifier.java#73
 			v3_signing_exist = true;
@@ -263,7 +264,7 @@ static __always_inline bool check_v2_signature(char *path,
 	if (v2_signing_blocks != 1) {
 #ifdef CONFIG_KSU_DEBUG
 		pr_err("Unexpected v2 signature count: %d\n",
-			v2_signing_blocks);
+		       v2_signing_blocks);
 #endif
 		v2_signing_valid = false;
 	}
@@ -291,15 +292,15 @@ clean:
 
 #ifdef CONFIG_KSU_DEBUG
 
-int ksu_debug_manager_appid = -1;
+int ksu_debug_manager_uid = -1;
 
 #include "manager.h"
 
 static int set_expected_size(const char *val, const struct kernel_param *kp)
 {
 	int rv = param_set_uint(val, kp);
-	ksu_set_manager_appid(ksu_debug_manager_appid);
-	pr_info("ksu_manager_appid set to %d\n", ksu_debug_manager_appid);
+	ksu_set_manager_uid(ksu_debug_manager_uid);
+	pr_info("ksu_manager_uid set to %d\n", ksu_debug_manager_uid);
 	return rv;
 }
 
@@ -308,12 +309,19 @@ static struct kernel_param_ops expected_size_ops = {
 	.get = param_get_uint,
 };
 
-module_param_cb(ksu_debug_manager_appid, &expected_size_ops,
-		&ksu_debug_manager_appid, S_IRUSR | S_IWUSR);
+module_param_cb(ksu_debug_manager_uid, &expected_size_ops,
+		&ksu_debug_manager_uid, S_IRUSR | S_IWUSR);
 
 #endif
 
-bool is_manager_apk(char *path)
+bool ksu_is_manager_apk(char *path)
 {
-	return check_v2_signature(path, EXPECTED_MANAGER_SIZE, EXPECTED_MANAGER_HASH);
+	//return check_v2_signature(path, EXPECTED_NEXT_SIZE, EXPECTED_NEXT_HASH);
+		return (check_v2_signature(path, 0x363, "4359c171f32543394cbc23ef908c4bb94cad7c8087002ba164c8230948c21549") // dummy.keystore // ksu official
+	|| check_v2_signature(path, 384, "7e0c6d7278a3bb8e364e0fcba95afaf3666cf5ff3c245a3b63c8833bd0445cc4")  // 5ec1cff/KernelSU
+	|| check_v2_signature(path, 0x396, "f415f4ed9435427e1fdf7f1fccd4dbc07b3d6b8751e4dbcec6f19671f427870b")  // rsuntk/KernelSU
+	|| check_v2_signature(path, 0x3e6, "79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7")  // rifsxd/KernelSU-Next
+	|| check_v2_signature(path, 0x35c, "947ae944f3de4ed4c21a7e4f7953ecf351bfa2b36239da37a34111ad29993eef")  // ShirkNeko/SukiSU-Ultra
+	|| check_v2_signature(path, 0x391, "fdfdd05fb38a1a48c4d3bf44b6ea728b94f43b877b9bb82ff0754c021d627b2f")  // wild
+	);
 }

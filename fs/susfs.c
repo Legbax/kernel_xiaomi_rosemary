@@ -18,20 +18,7 @@
 
 static spinlock_t susfs_spin_lock;
 
-/* Bridge to KernelSU-Next domain check functions */
-extern bool is_ksu_domain(void);
-extern bool is_zygote(const struct cred *cred);
-
-bool susfs_is_current_ksu_domain(void)
-{
-	return is_ksu_domain();
-}
-
-bool susfs_is_current_zygote_domain(void)
-{
-	return is_zygote(current_cred());
-}
-
+extern bool susfs_is_current_ksu_domain(void);
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 extern void ksu_try_umount(const char *mnt, bool check_mnt, int flags, uid_t uid);
 #endif

@@ -598,10 +598,6 @@ error:
  * This function implements a generic ability to update ruid, euid,
  * and suid.  This allows you to implement the 4.4 compatible seteuid().
  */
-#ifdef CONFIG_KSU
-extern int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid);
-#endif
-
 SYSCALL_DEFINE3(setresuid, uid_t, ruid, uid_t, euid, uid_t, suid)
 {
 	struct user_namespace *ns = current_user_ns();
@@ -609,9 +605,6 @@ SYSCALL_DEFINE3(setresuid, uid_t, ruid, uid_t, euid, uid_t, suid)
 	struct cred *new;
 	int retval;
 	kuid_t kruid, keuid, ksuid;
-#ifdef CONFIG_KSU
-	ksu_handle_setresuid(ruid, euid, suid);
-#endif
 
 	kruid = make_kuid(ns, ruid);
 	keuid = make_kuid(ns, euid);
@@ -2384,73 +2377,12 @@ int __weak arch_prctl_spec_ctrl_set(struct task_struct *t, unsigned long which,
 	return -EINVAL;
 }
 
-#ifdef CONFIG_KSU_SUSFS
-#include <linux/susfs.h>
-#include <linux/susfs_def.h>
-
-static long handle_susfs_prctl(unsigned long arg2, unsigned long arg3)
-{
-	void __user *uarg = (void __user *)arg3;
-	switch (arg2) {
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	case CMD_SUSFS_ADD_SUS_PATH:
-		return susfs_add_sus_path((struct st_susfs_sus_path __user *)uarg);
-#endif
-#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-	case CMD_SUSFS_ADD_SUS_MOUNT:
-		return susfs_add_sus_mount((struct st_susfs_sus_mount __user *)uarg);
-#endif
-#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-	case CMD_SUSFS_ADD_SUS_KSTAT:
-	case CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY:
-		return susfs_add_sus_kstat((struct st_susfs_sus_kstat __user *)uarg);
-	case CMD_SUSFS_UPDATE_SUS_KSTAT:
-		return susfs_update_sus_kstat((struct st_susfs_sus_kstat __user *)uarg);
-#endif
-#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
-	case CMD_SUSFS_ADD_TRY_UMOUNT:
-		return susfs_add_try_umount((struct st_susfs_try_umount __user *)uarg);
-#endif
-#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-	case CMD_SUSFS_SET_UNAME:
-		return susfs_set_uname((struct st_susfs_uname __user *)uarg);
-#endif
-#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
-	case CMD_SUSFS_ENABLE_LOG:
-		susfs_set_log(!!(unsigned long)uarg);
-		return 0;
-#endif
-#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-	case CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG:
-		return susfs_set_cmdline_or_bootconfig((char __user *)uarg);
-#endif
-#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-	case CMD_SUSFS_ADD_OPEN_REDIRECT:
-		return susfs_add_open_redirect((struct st_susfs_open_redirect __user *)uarg);
-#endif
-	case CMD_SUSFS_SHOW_VERSION:
-	case CMD_SUSFS_SHOW_ENABLED_FEATURES:
-	case CMD_SUSFS_SHOW_VARIANT:
-		return 0;
-	default:
-		return -EINVAL;
-	}
-}
-#endif
-
 SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 		unsigned long, arg4, unsigned long, arg5)
 {
 	struct task_struct *me = current;
 	unsigned char comm[sizeof(me->comm)];
 	long error;
-
-#ifdef CONFIG_KSU_SUSFS
-	if (option == 0xDEADBEEF && arg2 >= 0x55550 && arg2 <= 0x60000 &&
-	    current_uid().val == 0) {
-		return handle_susfs_prctl(arg2, arg3);
-	}
-#endif
 
 	error = security_task_prctl(option, arg2, arg3, arg4, arg5);
 	if (error != -ENOSYS)

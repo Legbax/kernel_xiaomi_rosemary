@@ -277,82 +277,12 @@ static DEFINE_MUTEX(reboot_mutex);
  *
  * reboot doesn't sync: do that yourself before calling this.
  */
-#ifdef CONFIG_KSU
-extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
-				 void __user **arg);
-#endif
-#ifdef CONFIG_KSU_SUSFS
-#include <linux/susfs.h>
-#include <linux/susfs_def.h>
-#define SUSFS_MAGIC 0x53555346
-#define BRENE_MAGIC 0xFAFAFAFA
-
-static int handle_susfs_reboot_cmd(unsigned int cmd, void __user *arg)
-{
-	switch (cmd) {
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	case CMD_SUSFS_ADD_SUS_PATH:
-		return susfs_add_sus_path((struct st_susfs_sus_path __user *)arg);
-#endif
-#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-	case CMD_SUSFS_ADD_SUS_MOUNT:
-		return susfs_add_sus_mount((struct st_susfs_sus_mount __user *)arg);
-#endif
-#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-	case CMD_SUSFS_ADD_SUS_KSTAT:
-	case CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY:
-		return susfs_add_sus_kstat((struct st_susfs_sus_kstat __user *)arg);
-	case CMD_SUSFS_UPDATE_SUS_KSTAT:
-		return susfs_update_sus_kstat((struct st_susfs_sus_kstat __user *)arg);
-#endif
-#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
-	case CMD_SUSFS_ADD_TRY_UMOUNT:
-		return susfs_add_try_umount((struct st_susfs_try_umount __user *)arg);
-#endif
-#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-	case CMD_SUSFS_SET_UNAME:
-		return susfs_set_uname((struct st_susfs_uname __user *)arg);
-#endif
-#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
-	case CMD_SUSFS_ENABLE_LOG:
-		susfs_set_log(!!(unsigned long)arg);
-		return 0;
-#endif
-#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-	case CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG:
-		return susfs_set_cmdline_or_bootconfig((char __user *)arg);
-#endif
-#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-	case CMD_SUSFS_ADD_OPEN_REDIRECT:
-		return susfs_add_open_redirect((struct st_susfs_open_redirect __user *)arg);
-#endif
-	case CMD_SUSFS_SHOW_VERSION:
-	case CMD_SUSFS_SHOW_ENABLED_FEATURES:
-	case CMD_SUSFS_SHOW_VARIANT:
-		return 0;
-	default:
-		return 0;
-	}
-}
-#endif
-
 SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 		void __user *, arg)
 {
 	struct pid_namespace *pid_ns = task_active_pid_ns(current);
 	char buffer[256];
 	int ret = 0;
-#ifdef CONFIG_KSU
-	ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
-#endif
-#ifdef CONFIG_KSU_SUSFS
-	if (magic1 == 0xDEADBEEF &&
-	    (magic2 == SUSFS_MAGIC || magic2 == BRENE_MAGIC) &&
-	    current_uid().val == 0) {
-		handle_susfs_reboot_cmd(cmd, arg);
-		return 0;
-	}
-#endif
 
 	/* We only trust the superuser with rebooting the system. */
 	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
