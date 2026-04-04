@@ -13,13 +13,13 @@
 
 /*
  * path_umount compat for pre-5.9 kernels.
- * On older kernels, use set_fs(KERNEL_DS) + ksys_umount with a kernel-space
- * path string obtained from d_path.
+ * Some 4.14 kernels (e.g. MediaTek) backport path_umount, so use a weak
+ * symbol to avoid duplicate definition at link time.
  */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
 #include <linux/syscalls.h>
 
-int path_umount(struct path *path, int flags)
+int __weak path_umount(struct path *path, int flags)
 {
 	char *buf, *mnt_path;
 	int ret;
