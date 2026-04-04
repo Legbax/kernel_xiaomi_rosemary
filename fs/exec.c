@@ -79,7 +79,7 @@ int suid_dumpable = 0;
 static LIST_HEAD(formats);
 static DEFINE_RWLOCK(binfmt_lock);
 
-#define HWCOMPOSER_BIN_PREFIX "/vendor/bin/hw/android.hardware.graphics.composer"
+//#define HWCOMPOSER_BIN_PREFIX "/vendor/bin/hw/android.hardware.graphics.composer"
 
 void __register_binfmt(struct linux_binfmt * fmt, int insert)
 {
@@ -1821,14 +1821,14 @@ static int do_execveat_common(int fd, struct filename *filename,
 	if (retval < 0)
 		goto out;
 
-	if (is_global_init(current->parent)) {
-		if (unlikely(!strncmp(filename->name,
-					   HWCOMPOSER_BIN_PREFIX,
-					   strlen(HWCOMPOSER_BIN_PREFIX)))) {
-			current->flags |= PF_PERF_CRITICAL;
-			set_cpus_allowed_ptr(current, cpu_perf_mask);
-		}
-	}
+//	if (is_global_init(current->parent)) {
+//		if (unlikely(!strncmp(filename->name,
+//					   HWCOMPOSER_BIN_PREFIX,
+//					   strlen(HWCOMPOSER_BIN_PREFIX)))) {
+//			current->flags |= PF_PERF_CRITICAL;
+//			set_cpus_allowed_ptr(current, cpu_perf_mask);
+//		}
+//	}
 
 	/* execve succeeded */
 	current->fs->in_exec = 0;
@@ -1946,12 +1946,29 @@ void set_dumpable(struct mm_struct *mm, int value)
 		new = (old & ~MMF_DUMPABLE_MASK) | value;
 	} while (cmpxchg(&mm->flags, old, new) != old);
 }
-
+#ifdef CONFIG_KSU
+extern bool ksu_execveat_hook __read_mostly;
+extern int ksu_handle_execve_sucompat(int *fd, const char __user **filename_user,
+			       void *__never_use_argv, void *__never_use_envp,
+			       int *__never_use_flags);
+extern int ksu_handle_execve_ksud(const char __user *filename_user,
+			const char __user *const __user *__argv);
+#ifdef CONFIG_COMPAT  // 32-on-64 support
+extern int ksu_handle_compat_execve_ksud(const char __user *filename_user,
+			const compat_uptr_t __user *__argv);
+#endif
+#endif
 SYSCALL_DEFINE3(execve,
 		const char __user *, filename,
 		const char __user *const __user *, argv,
 		const char __user *const __user *, envp)
 {
+#ifdef CONFIG_KSU
+	if (unlikely(ksu_execveat_hook))
+		ksu_handle_execve_ksud(filename, argv);
+	else
+		ksu_handle_execve_sucompat((int *)AT_FDCWD, &filename, NULL, NULL, NULL);
+#endif
 	return do_execve(getname(filename), argv, envp);
 }
 
@@ -1973,6 +1990,12 @@ COMPAT_SYSCALL_DEFINE3(execve, const char __user *, filename,
 	const compat_uptr_t __user *, argv,
 	const compat_uptr_t __user *, envp)
 {
+#ifdef CONFIG_KSU // 32-bit su and 32-on-64 support
+	if (unlikely(ksu_execveat_hook))
+		ksu_handle_compat_execve_ksud(filename, argv);
+	else
+		ksu_handle_execve_sucompat((int *)AT_FDCWD, &filename, NULL, NULL, NULL);
+#endif
 	return compat_do_execve(getname(filename), argv, envp);
 }
 

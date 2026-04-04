@@ -57,16 +57,16 @@ enum {
 
 #define NOT_SUPPORT	-1
 
-static float sc8551_adc_lsb[] = {
-	[ADC_IBUS]	= SC8551_IBUS_ADC_LSB,
-	[ADC_VBUS]	= SC8551_VBUS_ADC_LSB,
-	[ADC_VAC]	= SC8551_VAC_ADC_LSB,
-	[ADC_VOUT]	= SC8551_VOUT_ADC_LSB,
-	[ADC_VBAT]	= SC8551_VBAT_ADC_LSB,
-	[ADC_IBAT]	= SC8551_IBAT_ADC_LSB,
-	[ADC_TBUS]	= SC8551_TSBUS_ADC_LSB,
-	[ADC_TBAT]	= SC8551_TSBAT_ADC_LSB,
-	[ADC_TDIE]	= SC8551_TDIE_ADC_LSB,
+static int sc8551_adc_lsb_num[] = {
+	[ADC_IBUS]	= SC8551_IBUS_ADC_LSB_NUM,
+	[ADC_VBUS]	= SC8551_VBUS_ADC_LSB_NUM,
+	[ADC_VAC]	= SC8551_VAC_ADC_LSB_NUM,
+	[ADC_VOUT]	= SC8551_VOUT_ADC_LSB_NUM,
+	[ADC_VBAT]	= SC8551_VBAT_ADC_LSB_NUM,
+	[ADC_IBAT]	= SC8551_IBAT_ADC_LSB_NUM,
+	[ADC_TBUS]	= SC8551_TSBUS_ADC_LSB_NUM,
+	[ADC_TBAT]	= SC8551_TSBAT_ADC_LSB_NUM,
+	[ADC_TDIE]	= SC8551_TDIE_ADC_LSB_NUM,
 };
 
 #define BYPASS_IN_DEFAULT_FCC_MA			3000
@@ -1109,9 +1109,7 @@ static int bq2597x_get_adc_data(struct bq2597x *bq, int channel,  int *result)
 	*result = t;
 
 	if (bq->chip_vendor == SC8551) {
-		kernel_neon_begin();
-		*result = (int)(t * sc8551_adc_lsb[channel]);
-		kernel_neon_end();
+		*result = (int)((t * sc8551_adc_lsb_num[channel]) / SC8551_ADC_LSB_DENOM);
 	}
 
 	return 0;

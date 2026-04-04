@@ -1,0 +1,119 @@
+name: Build Kernel
+
+on:
+  push:
+    branches:
+      - R
+      - claude/**
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential libssl-dev bc bison flex libelf-dev \
+            cpio zip python3 binutils-aarch64-linux-gnu
+
+      - name: Download Clang + GCC toolchains
+        run: |
+          mkdir -p ~/tc/clang ~/tc/gcc
+          # AOSP Clang r416183b (clang-14, android12)
+          curl -sL https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android12-release/clang-r416183b.tar.gz | tar xz -C ~/tc/clang
+          # AOSP GCC 4.9 (for cross-assembler/linker)
+          curl -sL https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/android12-release.tar.gz | tar xz -C ~/tc/gcc
+          # Verify tools exist
+          ls ~/tc/clang/bin/clang && echo "clang OK"
+          ls ~/tc/gcc/bin/aarch64-linux-android-ld && echo "gcc OK"
+
+      - name: Set up kernel build
+        run: touch .scmversion
+
+      - name: Generate defconfig
+        run: |
+          export PATH="$HOME/tc/clang/bin:$HOME/tc/gcc/bin:$PATH"
+          make O=out ARCH=arm64 \
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            rosemary_defconfig
+
+      - name: Build kernel
+        shell: bash
+        run: |
+          set -eo pipefail
+          export PATH="$HOME/tc/clang/bin:$HOME/tc/gcc/bin:$PATH"
+          make O=out -j$(nproc) \
+            ARCH=arm64 \
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            2>&1 | tee build.log
+          ls -la out/arch/arm64/boot/Image* || {
+            echo "ERROR: No kernel image produced!"
+            tail -200 build.log
+            exit 1
+          }
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+
+      - name: Package with AnyKernel3
+        shell: bash
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
+          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/ 2>/dev/null \
+            || cp out/arch/arm64/boot/Image.gz AnyKernel3/ 2>/dev/null \
+            || cp out/arch/arm64/boot/Image AnyKernel3/
+          python3 -c "
+          script = '''# AnyKernel3 Ramdisk Mod Script
+          # osm0sis @ xda-developers
+          properties() { \$1
+          kernel.string=KernelSU-Next + SuSFS for Rosemary
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=rosemary
+          device.name2=secret
+          device.name3=maltose
+          supported.versions=11
+          supported.patchlevels=
+          \$1; }
+          block=/dev/block/platform/bootdevice/by-name/boot;
+          is_slot_device=0;
+          ramdisk_compression=auto;
+          patch_vbmeta_flag=auto;
+          . tools/ak3-core.sh;
+          dump_boot;
+          write_boot;
+          '''
+          import textwrap
+          script = textwrap.dedent(script).strip()
+          script = script.replace(chr(92) + chr(36) + '1', chr(39))
+          with open('AnyKernel3/anykernel.sh', 'w') as f:
+              f.write(script + chr(10))
+          "
+          cd AnyKernel3
+          zip -r9 "../KernelSU-Next-rosemary.zip" * -x .git README.md *placeholder
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KernelSU-Next-Rosemary-Kernel
+          path: KernelSU-Next-rosemary.zip
+          if-no-files-found: error
