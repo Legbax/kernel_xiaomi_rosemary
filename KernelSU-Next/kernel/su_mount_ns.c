@@ -158,11 +158,7 @@ try_setns:
     fd_install(fd, ns_file);
     ret = ksu_sys_setns(fd, CLONE_NEWNS);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
-    ksys_close(fd);
-#else
     close_fd(fd);
-#endif
 
     if (ret) {
         pr_warn("call setns failed: %ld\n", ret);
