@@ -16,8 +16,14 @@
 static struct policydb *get_policydb(void)
 {
     struct policydb *db;
+#ifdef KSU_COMPAT_HAS_SELINUX_POLICY
+    /* 5.x+ kernels with selinux_policy struct */
     struct selinux_policy *policy = selinux_state.policy;
     db = &policy->policydb;
+#else
+    /* Older kernels: access via selinux_state.ss */
+    db = &selinux_state.ss->policydb;
+#endif
     return db;
 }
 

@@ -21,10 +21,43 @@
 #include "su_mount_ns.h"
 #include "kernel_compat.h"
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 extern int path_mount(const char *dev_name, struct path *path,
                       const char *type_page, unsigned long flags,
                       void *data_page);
+#else
+#include <linux/uaccess.h>
+static int path_mount(const char *dev_name, struct path *path,
+                      const char *type_page, unsigned long flags,
+                      void *data_page)
+{
+    char *pathbuf, *mnt_path;
+    int ret;
 
+    pathbuf = kmalloc(PATH_MAX, GFP_KERNEL);
+    if (!pathbuf)
+        return -ENOMEM;
+
+    mnt_path = d_path(path, pathbuf, PATH_MAX);
+    if (IS_ERR(mnt_path)) {
+        kfree(pathbuf);
+        return PTR_ERR(mnt_path);
+    }
+
+    {
+        mm_segment_t old_fs = get_fs();
+        set_fs(KERNEL_DS);
+        ret = do_mount(dev_name, (const char __user *)mnt_path,
+                       type_page, flags, data_page);
+        set_fs(old_fs);
+    }
+
+    kfree(pathbuf);
+    return ret;
+}
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
 #if defined(__aarch64__)
 extern long __arm64_sys_setns(const struct pt_regs *regs);
 #elif defined(__x86_64__)
@@ -47,6 +80,13 @@ static long ksu_sys_setns(int fd, int flags)
 #error "Unsupported arch"
 #endif
 }
+#else
+/* Pre-4.17: use sys_setns directly */
+static long ksu_sys_setns(int fd, int flags)
+{
+    return sys_setns(fd, flags);
+}
+#endif
 
 // global mode , need CAP_SYS_ADMIN and CAP_SYS_CHROOT to perform setns
 static void ksu_mnt_ns_global(void)
@@ -146,7 +186,11 @@ out:
 // individual mode , need CAP_SYS_ADMIN to perform unshare and remount
 static void ksu_mnt_ns_individual(void)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
     long ret = ksys_unshare(CLONE_NEWNS);
+#else
+    long ret = sys_unshare(CLONE_NEWNS);
+#endif
     if (ret) {
         pr_warn("call ksys_unshare failed: %ld\n", ret);
         return;

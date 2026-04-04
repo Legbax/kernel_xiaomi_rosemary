@@ -479,6 +479,7 @@ static const struct hashtab_key_params filenametr_key_params = {
 };
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 static bool add_filename_trans(struct policydb *db, const char *s,
                                const char *t, const char *c, const char *d,
                                const char *o)
@@ -517,7 +518,6 @@ static bool add_filename_trans(struct policydb *db, const char *s,
     struct filename_trans_datum *trans = policydb_filenametr_search(db, &key);
     while (trans) {
         if (ebitmap_get_bit(&trans->stypes, src->value - 1)) {
-            // Duplicate, overwrite existing data and return
             trans->otype = def->value;
             return true;
         }
@@ -543,6 +543,63 @@ static bool add_filename_trans(struct policydb *db, const char *s,
     db->compat_filename_trans_count++;
     return ebitmap_set_bit(&trans->stypes, src->value - 1, 1) == 0;
 }
+#else
+/* Pre-5.9: filename_trans uses flat struct, hashtab_insert takes 3 args */
+static bool add_filename_trans(struct policydb *db, const char *s,
+                               const char *t, const char *c, const char *d,
+                               const char *o)
+{
+    struct type_datum *src, *tgt, *def;
+    struct class_datum *cls;
+
+    src = symtab_search(&db->p_types, s);
+    if (src == NULL) {
+        pr_warn("source type %s does not exist\n", s);
+        return false;
+    }
+    tgt = symtab_search(&db->p_types, t);
+    if (tgt == NULL) {
+        pr_warn("target type %s does not exist\n", t);
+        return false;
+    }
+    cls = symtab_search(&db->p_classes, c);
+    if (cls == NULL) {
+        pr_warn("class %s does not exist\n", c);
+        return false;
+    }
+    def = symtab_search(&db->p_types, d);
+    if (def == NULL) {
+        pr_warn("default type %s does not exist\n", d);
+        return false;
+    }
+
+    struct filename_trans *ft = kzalloc(sizeof(*ft), GFP_ATOMIC);
+    if (!ft)
+        return false;
+    ft->stype = src->value;
+    ft->ttype = tgt->value;
+    ft->tclass = cls->value;
+    ft->name = kstrdup(o, GFP_ATOMIC);
+
+    struct filename_trans_datum *dt = kzalloc(sizeof(*dt), GFP_ATOMIC);
+    if (!dt) {
+        kfree(ft->name);
+        kfree(ft);
+        return false;
+    }
+    dt->otype = def->value;
+
+    int rc = hashtab_insert(db->filename_trans, ft, dt);
+    if (rc) {
+        kfree(ft->name);
+        kfree(ft);
+        kfree(dt);
+        return rc == -EEXIST;
+    }
+
+    return true;
+}
+#endif
 
 static bool add_genfscon(struct policydb *db, const char *fs_name,
                          const char *path, const char *context)
