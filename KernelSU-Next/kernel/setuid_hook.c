@@ -1,5 +1,6 @@
 #include <linux/compiler.h>
 #include <linux/version.h>
+#include "kernel_compat.h"
 #include <linux/slab.h>
 #include <linux/task_work.h>
 #include <linux/thread_info.h>
@@ -21,7 +22,6 @@
 #include "supercalls.h"
 #include "syscall_hook_manager.h"
 #include "kernel_umount.h"
-#include "kernel_compat.h"
 
 static void ksu_install_manager_fd_tw_func(struct callback_head *cb)
 {

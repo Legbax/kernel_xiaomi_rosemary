@@ -92,4 +92,7 @@ ccflags-y += -DEXPECTED_MANAGER_HASH=\"$(KSU_NEXT_MANAGER_HASH)\"
 ccflags-y += -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat -Wno-missing-prototypes
 ccflags-y += -Wno-declaration-after-statement -Wno-unused-function -Wno-unused-variable
 
+# Compat: TWA_RESUME doesn't exist on pre-5.7 kernels (task_work_add uses bool)
+ccflags-y += -DTWA_RESUME=1
+
 # Keep a new line here!! Because someone may append config
