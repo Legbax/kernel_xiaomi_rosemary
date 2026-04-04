@@ -635,6 +635,12 @@ void *ksu_kvrealloc_compat(const void *p, size_t oldsize, size_t newsize,
     ksu_kvrealloc_compat(p, old_size, new_size, GFP_ATOMIC)
 #endif
 
+/*
+ * On kernel 4.14, policydb uses flex_array for type_val_to_struct_array,
+ * type_attr_map_array, and sym_val_to_name[]. These were changed to plain
+ * pointer arrays in newer kernels. We need separate implementations.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
 static bool add_type(struct policydb *db, const char *type_name, bool attr)
 {
     struct type_datum *type = symtab_search(&db->p_types, type_name);
@@ -709,6 +715,113 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
 
     return true;
 }
+#else /* < 4.18: policydb uses flex_array */
+#include <linux/flex_array.h>
+
+static struct flex_array *ksu_flex_array_realloc(struct flex_array *old,
+    int element_size, unsigned int old_total, unsigned int new_total, gfp_t flags)
+{
+    struct flex_array *new_fa;
+    unsigned int i;
+
+    new_fa = flex_array_alloc(element_size, new_total, flags);
+    if (!new_fa)
+        return NULL;
+    if (flex_array_prealloc(new_fa, 0, new_total, flags)) {
+        flex_array_free(new_fa);
+        return NULL;
+    }
+    /* Copy old elements */
+    for (i = 0; i < old_total; i++) {
+        void *src = flex_array_get(old, i);
+        if (src)
+            flex_array_put(new_fa, i, src, flags);
+    }
+    flex_array_free(old);
+    return new_fa;
+}
+
+static bool add_type(struct policydb *db, const char *type_name, bool attr)
+{
+    struct type_datum *type = symtab_search(&db->p_types, type_name);
+    struct ebitmap *e;
+    int rc;
+    if (type) {
+        pr_warn("Type %s already exists\n", type_name);
+        return true;
+    }
+
+    u32 value = ++db->p_types.nprim;
+    type = (struct type_datum *)kzalloc(sizeof(struct type_datum), GFP_ATOMIC);
+    if (!type) {
+        pr_err("add_type: alloc type_datum failed.\n");
+        return false;
+    }
+
+    type->primary = 1;
+    type->value = value;
+    type->attribute = attr;
+
+    char *key = kstrdup(type_name, GFP_ATOMIC);
+    if (!key) {
+        pr_err("add_type: alloc key failed.\n");
+        return false;
+    }
+
+    if (symtab_insert(&db->p_types, key, type)) {
+        pr_err("add_type: insert symtab failed.\n");
+        return false;
+    }
+
+    /* Reallocate type_attr_map_array (flex_array of struct ebitmap) */
+    db->type_attr_map_array = ksu_flex_array_realloc(db->type_attr_map_array,
+        sizeof(struct ebitmap), value - 1, value, GFP_ATOMIC);
+    if (!db->type_attr_map_array) {
+        pr_err("add_type: realloc type_attr_map_array failed\n");
+        return false;
+    }
+    e = flex_array_get(db->type_attr_map_array, value - 1);
+    if (e) {
+        ebitmap_init(e);
+        ebitmap_set_bit(e, value - 1, 1);
+    }
+
+    /* Reallocate type_val_to_struct_array (flex_array of struct type_datum *) */
+    db->type_val_to_struct_array = ksu_flex_array_realloc(
+        db->type_val_to_struct_array, sizeof(struct type_datum *),
+        value - 1, value, GFP_ATOMIC);
+    if (!db->type_val_to_struct_array) {
+        pr_err("add_type: realloc type_val_to_struct_array failed\n");
+        return false;
+    }
+    rc = flex_array_put_ptr(db->type_val_to_struct_array, value - 1,
+                            type, GFP_ATOMIC);
+    if (rc) {
+        pr_err("add_type: flex_array_put_ptr type failed: %d\n", rc);
+    }
+
+    /* Reallocate sym_val_to_name[SYM_TYPES] (flex_array of char *) */
+    db->sym_val_to_name[SYM_TYPES] = ksu_flex_array_realloc(
+        db->sym_val_to_name[SYM_TYPES], sizeof(char *),
+        value - 1, value, GFP_ATOMIC);
+    if (!db->sym_val_to_name[SYM_TYPES]) {
+        pr_err("add_type: realloc sym_val_to_name failed\n");
+        return false;
+    }
+    rc = flex_array_put_ptr(db->sym_val_to_name[SYM_TYPES], value - 1,
+                            key, GFP_ATOMIC);
+    if (rc) {
+        pr_err("add_type: flex_array_put_ptr name failed: %d\n", rc);
+    }
+
+    int i;
+    for (i = 0; i < db->p_roles.nprim; ++i) {
+        ebitmap_set_bit(&db->role_val_to_struct[i]->types, value - 1, 1);
+    }
+
+    return true;
+}
+#endif /* flex_array compat */
 
 static bool set_type_state(struct policydb *db, const char *type_name,
                            bool permissive)
@@ -739,7 +852,13 @@ static bool set_type_state(struct policydb *db, const char *type_name,
 static void add_typeattribute_raw(struct policydb *db, struct type_datum *type,
                                   struct type_datum *attr)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
     struct ebitmap *sattr = &db->type_attr_map_array[type->value - 1];
+#else
+    struct ebitmap *sattr = flex_array_get(db->type_attr_map_array, type->value - 1);
+    if (!sattr)
+        return;
+#endif
     ebitmap_set_bit(sattr, attr->value - 1, 1);
 
     struct hashtab_node *node;
