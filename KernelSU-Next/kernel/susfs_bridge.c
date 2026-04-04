@@ -61,4 +61,17 @@ void ksu_try_umount(const char *mnt, bool check_mnt, int flags, uid_t uid)
 	}
 }
 
+/*
+ * susfs_try_umount_all - called from fs/namespace.c
+ * Bridge to susfs_try_umount() which is the actual implementation in fs/susfs.c
+ */
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+extern void susfs_try_umount(uid_t target_uid);
+
+void susfs_try_umount_all(uid_t uid)
+{
+	susfs_try_umount(uid);
+}
+#endif
+
 #endif /* CONFIG_KSU_SUSFS */

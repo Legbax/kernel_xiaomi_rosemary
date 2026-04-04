@@ -28,6 +28,15 @@
 #include "throne_tracker.h"
 #include "kernel_compat.h"
 
+/*
+ * ksu_input_hook: legacy symbol referenced by patched drivers/input/input.c.
+ * KernelSU-Next uses kprobe-based hooking, but the kernel source still
+ * references this bool. Provide it so the linker is happy.
+ */
+#ifdef CONFIG_KSU
+bool ksu_input_hook __read_mostly = false;
+#endif
+
 bool ksu_module_mounted __read_mostly = false;
 bool ksu_boot_completed __read_mostly = false;
 
