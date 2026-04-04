@@ -18,18 +18,16 @@
 #define __PT_SP_REG sp
 #define __PT_IP_REG pc
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
-#define PRCTL_SYMBOL "__arm64_sys_prctl"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
+#define REBOOT_SYMBOL "__arm64_sys_reboot"
 #define SYS_READ_SYMBOL "__arm64_sys_read"
-#define SYS_NEWFSTATAT_SYMBOL "__arm64_sys_newfstatat"
-#define SYS_FACCESSAT_SYMBOL "__arm64_sys_faccessat"
 #define SYS_EXECVE_SYMBOL "__arm64_sys_execve"
+#define SYS_FSTAT_SYMBOL "__arm64_sys_newfstat"
 #else
-#define PRCTL_SYMBOL "sys_prctl"
-#define SYS_READ_SYMBOL "sys_read"
-#define SYS_NEWFSTATAT_SYMBOL "sys_newfstatat"
-#define SYS_FACCESSAT_SYMBOL "sys_faccessat"
-#define SYS_EXECVE_SYMBOL "sys_execve"
+#define REBOOT_SYMBOL "SyS_reboot"
+#define SYS_READ_SYMBOL "SyS_read"
+#define SYS_EXECVE_SYMBOL "SyS_execve"
+#define SYS_FSTAT_SYMBOL "SyS_newfstat"
 #endif
 
 #elif defined(__x86_64__)
@@ -47,19 +45,10 @@
 #define __PT_RC_REG ax
 #define __PT_SP_REG sp
 #define __PT_IP_REG ip
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
-#define PRCTL_SYMBOL "__x64_sys_prctl"
+#define REBOOT_SYMBOL "__x64_sys_reboot"
 #define SYS_READ_SYMBOL "__x64_sys_read"
-#define SYS_NEWFSTATAT_SYMBOL "__x64_sys_newfstatat"
-#define SYS_FACCESSAT_SYMBOL "__x64_sys_faccessat"
 #define SYS_EXECVE_SYMBOL "__x64_sys_execve"
-#else
-#define PRCTL_SYMBOL "sys_prctl"
-#define SYS_READ_SYMBOL "sys_read"
-#define SYS_NEWFSTATAT_SYMBOL "sys_newfstatat"
-#define SYS_FACCESSAT_SYMBOL "sys_faccessat"
-#define SYS_EXECVE_SYMBOL "sys_execve"
-#endif
+#define SYS_FSTAT_SYMBOL "__x64_sys_newfstat"
 
 #else
 #error "Unsupported arch"
@@ -83,10 +72,10 @@
 #define PT_REGS_SP(x) (__PT_REGS_CAST(x)->__PT_SP_REG)
 #define PT_REGS_IP(x) (__PT_REGS_CAST(x)->__PT_IP_REG)
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
 #define PT_REAL_REGS(regs) ((struct pt_regs *)PT_REGS_PARM1(regs))
 #else
-#define PT_REAL_REGS(regs) ((regs))
+#define PT_REAL_REGS(regs) (regs)
 #endif
 
 #endif
