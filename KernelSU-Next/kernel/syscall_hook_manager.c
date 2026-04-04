@@ -327,6 +327,7 @@ static void ksu_sys_enter_handler(void *data, struct pt_regs *regs, long id)
             ksu_handle_setresuid(ruid, euid, suid);
             return;
         }
+
     }
 }
 #endif

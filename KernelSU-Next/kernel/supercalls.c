@@ -965,9 +965,191 @@ static struct kprobe reboot_kp = {
 	.pre_handler = reboot_handler_pre,
 };
 
+/*
+ * Legacy prctl interface for backward compatibility with older manager apps.
+ * The manager calls prctl(0xDEADBEEF, cmd, arg1, arg2, &result).
+ * We bridge the legacy commands to the new IOCTL-based infrastructure.
+ */
+#define PRCTL_MAGIC 0xDEADBEEF
+#define PRCTL_CMD_BECOME_MANAGER 1
+#define PRCTL_CMD_GET_VERSION 2
+#define PRCTL_CMD_GET_SU_LIST 5
+#define PRCTL_CMD_GET_DENY_LIST 6
+#define PRCTL_CMD_CHECK_SAFEMODE 9
+#define PRCTL_CMD_GET_APP_PROFILE 10
+#define PRCTL_CMD_SET_APP_PROFILE 11
+#define PRCTL_CMD_IS_UID_GRANTED_ROOT 12
+#define PRCTL_CMD_IS_UID_SHOULD_UMOUNT 13
+#define PRCTL_CMD_IS_SU_ENABLED 14
+#define PRCTL_CMD_ENABLE_SU 15
+#define PRCTL_CMD_HOOK_MODE 16
+
+int ksu_handle_prctl(unsigned long option, unsigned long cmd,
+                     unsigned long arg2, unsigned long arg3,
+                     unsigned long arg4)
+{
+    int32_t __user *result_p;
+    int32_t result_val;
+
+    if (option != PRCTL_MAGIC)
+        return 0; /* not for us */
+
+    result_p = (int32_t __user *)arg4;
+
+    switch (cmd) {
+    case PRCTL_CMD_BECOME_MANAGER: {
+        char path[256];
+        long ret = ksu_strncpy_from_user_nofault(path, (const char __user *)arg2, sizeof(path));
+        if (ret <= 0)
+            break;
+        /*
+         * Manager passes its data dir path (e.g. /data/data/com.rifsxd.ksunext).
+         * If throne_tracker already verified this app, is_manager() returns true.
+         * Otherwise trigger track_throne() which reads packages.list, searches
+         * /data/app for the manager APK, and verifies its signature.
+         */
+        if (!is_manager() && !ksu_is_manager_appid_valid()) {
+            extern void track_throne(bool prune_only);
+            pr_info("prctl: become_manager - running track_throne for uid=%d\n",
+                    current_uid().val);
+            track_throne(false);
+        }
+        if (is_manager()) {
+            pr_info("prctl: become_manager confirmed uid=%d\n",
+                    current_uid().val);
+            result_val = PRCTL_MAGIC;
+            if (result_p)
+                copy_to_user(result_p, &result_val, sizeof(result_val));
+        } else {
+            pr_info("prctl: become_manager rejected uid=%d path=%s\n",
+                    current_uid().val, path);
+        }
+        break;
+    }
+    case PRCTL_CMD_GET_VERSION: {
+        int32_t __user *version_p = (int32_t __user *)arg2;
+        int32_t __user *lkm_p = (int32_t __user *)arg3;
+        int32_t ver = KERNEL_SU_VERSION;
+        int32_t lkm = 0;
+        if (ksuver_override)
+            ver = ksuver_override;
+        if (version_p)
+            copy_to_user(version_p, &ver, sizeof(ver));
+        if (lkm_p)
+            copy_to_user(lkm_p, &lkm, sizeof(lkm));
+        result_val = PRCTL_MAGIC;
+        if (result_p)
+            copy_to_user(result_p, &result_val, sizeof(result_val));
+        break;
+    }
+    case PRCTL_CMD_CHECK_SAFEMODE: {
+        result_val = PRCTL_MAGIC;
+        if (result_p)
+            copy_to_user(result_p, &result_val, sizeof(result_val));
+        break;
+    }
+    case PRCTL_CMD_IS_UID_GRANTED_ROOT: {
+        uid_t uid = (uid_t)arg2;
+        bool granted = ksu_is_allow_uid(uid);
+        int32_t __user *granted_p = (int32_t __user *)arg3;
+        if (granted_p) {
+            int32_t g = granted ? 1 : 0;
+            copy_to_user(granted_p, &g, sizeof(g));
+        }
+        result_val = PRCTL_MAGIC;
+        if (result_p)
+            copy_to_user(result_p, &result_val, sizeof(result_val));
+        break;
+    }
+    case PRCTL_CMD_IS_UID_SHOULD_UMOUNT: {
+        uid_t uid = (uid_t)arg2;
+        bool should = ksu_uid_should_umount(uid);
+        bool __user *should_p = (bool __user *)arg3;
+        if (should_p)
+            copy_to_user(should_p, &should, sizeof(should));
+        result_val = PRCTL_MAGIC;
+        if (result_p)
+            copy_to_user(result_p, &result_val, sizeof(result_val));
+        break;
+    }
+    case PRCTL_CMD_GET_APP_PROFILE: {
+        if (!is_manager() && current_uid().val != 0)
+            break;
+        struct app_profile profile;
+        if (copy_from_user(&profile, (void __user *)arg2, sizeof(profile)))
+            break;
+        ksu_get_app_profile(&profile);
+        copy_to_user((void __user *)arg2, &profile, sizeof(profile));
+        result_val = PRCTL_MAGIC;
+        if (result_p)
+            copy_to_user(result_p, &result_val, sizeof(result_val));
+        break;
+    }
+    case PRCTL_CMD_SET_APP_PROFILE: {
+        if (!is_manager() && current_uid().val != 0)
+            break;
+        struct app_profile profile;
+        if (copy_from_user(&profile, (void __user *)arg2, sizeof(profile)))
+            break;
+        ksu_set_app_profile(&profile);
+        result_val = PRCTL_MAGIC;
+        if (result_p)
+            copy_to_user(result_p, &result_val, sizeof(result_val));
+        break;
+    }
+    case PRCTL_CMD_HOOK_MODE: {
+        char __user *mode_p = (char __user *)arg2;
+        if (mode_p)
+            copy_to_user(mode_p, "tracepoint", 11);
+        result_val = PRCTL_MAGIC;
+        if (result_p)
+            copy_to_user(result_p, &result_val, sizeof(result_val));
+        break;
+    }
+    default:
+        pr_info("prctl: unknown cmd %lu\n", cmd);
+        break;
+    }
+
+    return 0;
+}
+
+/*
+ * kprobe handler for sys_prctl to intercept legacy manager prctl calls.
+ * This fires for ALL processes (unlike tracepoints which need marking).
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
+#define PRCTL_SYMBOL "__arm64_sys_prctl"
+#else
+#define PRCTL_SYMBOL "SyS_prctl"
+#endif
+
+static int prctl_handler_pre(struct kprobe *p, struct pt_regs *regs)
+{
+    struct pt_regs *real_regs = PT_REAL_REGS(regs);
+    unsigned long option = (unsigned long)PT_REGS_PARM1(real_regs);
+
+    /* Quick check: only intercept our magic option */
+    if (likely(option != PRCTL_MAGIC))
+        return 0;
+
+    unsigned long cmd = (unsigned long)PT_REGS_PARM2(real_regs);
+    unsigned long arg2 = (unsigned long)PT_REGS_PARM3(real_regs);
+    unsigned long arg3 = (unsigned long)PT_REGS_SYSCALL_PARM4(real_regs);
+    unsigned long arg4 = (unsigned long)PT_REGS_PARM5(real_regs);
+
+    ksu_handle_prctl(option, cmd, arg2, arg3, arg4);
+    return 0;
+}
+
+static struct kprobe prctl_kp = {
+    .symbol_name = PRCTL_SYMBOL,
+    .pre_handler = prctl_handler_pre,
+};
+
 void ksu_supercalls_init(void)
 {
-	int i;
+	int i, rc;
 
     pr_info("KernelSU IOCTL Commands:\n");
     for (i = 0; ksu_ioctl_handlers[i].handler; i++) {
@@ -975,11 +1157,18 @@ void ksu_supercalls_init(void)
                 ksu_ioctl_handlers[i].cmd);
     }
 
-	int rc = register_kprobe(&reboot_kp);
+	rc = register_kprobe(&reboot_kp);
 	if (rc) {
 		pr_err("reboot kprobe failed: %d\n", rc);
 	} else {
 		pr_info("reboot kprobe registered successfully\n");
+	}
+
+	rc = register_kprobe(&prctl_kp);
+	if (rc) {
+		pr_err("prctl kprobe failed: %d\n", rc);
+	} else {
+		pr_info("prctl kprobe registered for legacy manager support\n");
 	}
 
     sulog_init_heap(); // grab heap memory
@@ -988,6 +1177,7 @@ void ksu_supercalls_init(void)
 void ksu_supercalls_exit(void)
 {
     unregister_kprobe(&reboot_kp);
+    unregister_kprobe(&prctl_kp);
 }
 
 // IOCTL dispatcher
