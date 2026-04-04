@@ -10,10 +10,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      ARCH: arm64
-      SUBARCH: arm64
-      CROSS_COMPILE: aarch64-linux-gnu-
 
     steps:
       - name: Checkout source
@@ -26,7 +22,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
-            gcc-aarch64-linux-gnu \
             libssl-dev \
             bc \
             bison \
@@ -34,25 +29,54 @@ jobs:
             libelf-dev \
             cpio \
             zip \
-            python3
+            python3 \
+            binutils-aarch64-linux-gnu
+
+      - name: Download Clang toolchain
+        run: |
+          mkdir -p $HOME/toolchain
+          cd $HOME/toolchain
+          # Use AOSP clang r416183b (clang-14) which is widely used for kernel 4.14
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android12-release/clang-r416183b.tar.gz -O clang.tar.gz \
+            || wget -q https://github.com/ZyCromerZ/Clang/releases/download/19.0.0git-20240316-release/Clang-19.0.0git-20240316.tar.gz -O clang.tar.gz
+          mkdir clang && tar -xf clang.tar.gz -C clang
+          # Also get GCC cross-compiler for assembler
+          wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/android12-release.tar.gz -O gcc.tar.gz \
+            || true
+          if [ -f gcc.tar.gz ] && [ -s gcc.tar.gz ]; then
+            mkdir gcc && tar -xf gcc.tar.gz -C gcc
+          fi
 
       - name: Set up kernel build
         run: |
           touch .scmversion
-          # Strip standalone -Werror from ALL Makefiles (GCC 11+ compat)
-          find . -name Makefile -not -path './.git/*' -exec \
-            sed -i 's/-Werror[[:space:]]/ /g; s/-Werror$//g' {} +
 
       - name: Generate defconfig
-        run: make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- rosemary_defconfig
+        run: |
+          export PATH="$HOME/toolchain/clang/bin:$HOME/toolchain/gcc/bin:$PATH"
+          make O=out ARCH=arm64 \
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            rosemary_defconfig
 
       - name: Build kernel
         shell: bash
         run: |
           set -eo pipefail
+          export PATH="$HOME/toolchain/clang/bin:$HOME/toolchain/gcc/bin:$PATH"
+          # Fallback: if android gcc not available, use system binutils
+          if ! command -v aarch64-linux-android-ld &>/dev/null; then
+            export CROSS_COMPILE=aarch64-linux-gnu-
+          else
+            export CROSS_COMPILE=aarch64-linux-android-
+          fi
           make O=out -j$(nproc) \
             ARCH=arm64 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC=clang \
+            CROSS_COMPILE=$CROSS_COMPILE \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
             2>&1 | tee build.log
           ls -la out/arch/arm64/boot/Image* || {
             echo "ERROR: No kernel image produced!"
