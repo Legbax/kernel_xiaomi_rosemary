@@ -9,10 +9,10 @@
  */
 
 /* task_work_add: 4.14 uses bool notify, 5.7+ uses enum task_work_notify_mode */
+#include <linux/task_work.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 7, 0)
-#ifndef TWA_RESUME
-#define TWA_RESUME true
-#endif
+#undef TWA_RESUME
+#define TWA_RESUME 1
 #endif
 
 /* mmap_read_trylock / mmap_read_unlock: 5.8+ API, 4.14 uses mmap_sem */
