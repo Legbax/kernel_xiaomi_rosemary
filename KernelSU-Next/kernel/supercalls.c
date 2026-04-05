@@ -408,11 +408,12 @@ static int do_set_feature(void __user *arg)
 
 static int do_get_wrapper_fd(void __user *arg)
 {
+    struct ksu_get_wrapper_fd_cmd cmd;
+
     if (!ksu_file_sid) {
         return -EINVAL;
     }
 
-    struct ksu_get_wrapper_fd_cmd cmd;
     if (copy_from_user(&cmd, arg, sizeof(cmd))) {
         pr_err("get_wrapper_fd: copy_from_user failed\n");
         return -EFAULT;
@@ -530,12 +531,12 @@ static int do_nuke_ext4_sysfs(void __user *arg)
 
     ret = strncpy_from_user(mnt, cmd.arg, sizeof(mnt));
     if (ret < 0) {
-        pr_err("nuke ext4 copy mnt failed: %ld\\n", ret);
+        pr_err("nuke ext4 copy mnt failed: %ld\n", ret);
         return -EFAULT; // 或者 return ret;
     }
 
     if (ret == sizeof(mnt)) {
-        pr_err("nuke ext4 mnt path too long\\n");
+        pr_err("nuke ext4 mnt path too long\n");
         return -ENAMETOOLONG;
     }
 
@@ -861,10 +862,11 @@ static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
 	}
 
 	if (magic2 == GET_SULOG_DUMP_V2) {
+		int ret;
 		if (current_uid().val != 0)
 			return 0;
 
-		int ret = send_sulog_dump((void __user *)arg4);
+		ret = send_sulog_dump((void __user *)arg4);
             if (ret)
                 return 0;
 
@@ -886,22 +888,21 @@ static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
 	// WARNING!!! triple ptr zone! ***
 	// https://wiki.c2.com/?ThreeStarProgrammer
 	if (magic2 == CHANGE_SPOOF_UNAME) {
-		// only root is allowed for this command 
-		if (current_uid().val != 0)
-			return 0;
-
 		char release_buf[65];
 		char version_buf[65];
 		static char original_release_buf[65] = {0};
 		static char original_version_buf[65] = {0};
-
-		// basically void * void __user * void __user *arg
-		void __user **ppptr = (void __user **)arg4;
-
-		// user pointer storage
-		// init this as zero so this works on 32-on-64 compat (LE)
+		void __user **ppptr;
 		uint64_t u_pptr = 0;
 		uint64_t u_ptr = 0;
+		struct new_utsname *u;
+
+		// only root is allowed for this command
+		if (current_uid().val != 0)
+			return 0;
+
+		// basically void * void __user * void __user *arg
+		ppptr = (void __user **)arg4;
 
 		pr_info("sys_reboot: ppptr: 0x%lx \n", (uintptr_t)ppptr);
 
@@ -922,12 +923,12 @@ static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
 		// for release
 		if (strncpy_from_user(release_buf, (char __user *)u_ptr, sizeof(release_buf)) < 0)
 			return 0;
-		release_buf[sizeof(release_buf) - 1] = '\0'; 
+		release_buf[sizeof(release_buf) - 1] = '\0';
 
 		// for version
 		if (strncpy_from_user(version_buf, (char __user *)(u_ptr + strlen(release_buf) + 1), sizeof(version_buf)) < 0)
 			return 0;
-		version_buf[sizeof(version_buf) - 1] = '\0'; 
+		version_buf[sizeof(version_buf) - 1] = '\0';
 
 		if (original_release_buf[0] == '\0') {
 			struct new_utsname *u_curr = utsname();
@@ -945,7 +946,7 @@ static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
 
 		pr_info("sys_reboot: spoofing kernel to: %s - %s\n", release_buf, version_buf);
 
-		struct new_utsname *u = utsname();
+		u = utsname();
 
 		down_write(&uts_sem);
 		strncpy(u->release, release_buf, sizeof(u->release));
