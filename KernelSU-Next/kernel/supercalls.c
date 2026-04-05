@@ -1217,6 +1217,7 @@ static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
             (void)copy_to_user(var_p, "KSU-Next", 9);
         break;
     }
+#ifdef CONFIG_KSU_SUSFS_SUS_SU
     case CMD_SUSFS_SHOW_SUS_SU_WORKING_MODE: {
         extern int susfs_get_sus_su_working_mode(void);
         int __user *mode_p = (int __user *)arg2;
@@ -1235,6 +1236,7 @@ static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
         }
         break;
     }
+#endif
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
     case CMD_SUSFS_ADD_SUS_PATH: {
         extern int susfs_add_sus_path(void __user *);
@@ -1301,11 +1303,13 @@ static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
         break;
     }
 #endif
+#ifdef CONFIG_KSU_SUSFS_SUS_SU
     case CMD_SUSFS_SUS_SU: {
         extern int susfs_sus_su(void __user *);
         error = susfs_sus_su((void __user *)arg2);
         break;
     }
+#endif
     default:
         pr_info("susfs: unknown cmd 0x%lx\n", cmd);
         break;
