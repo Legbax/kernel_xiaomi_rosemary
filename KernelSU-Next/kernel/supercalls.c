@@ -12,6 +12,9 @@
 #include <linux/uaccess.h>
 #include <linux/version.h>
 #include <linux/utsname.h> // utsname() and uts_sem
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs.h>
+#endif
 
 #include "supercalls.h"
 #include "arch.h"
@@ -85,6 +88,9 @@ static int do_get_info(void __user *arg)
 	if (is_manager()) {
 		cmd.flags |= 0x2;
 	}
+#ifdef CONFIG_KSU_SUSFS
+	cmd.flags |= 0x4; /* bit 2: SUSFS enabled */
+#endif
 	cmd.features = KSU_FEATURE_MAX;
 
 	if (copy_to_user(arg, &cmd, sizeof(cmd))) {
@@ -1022,8 +1028,20 @@ int ksu_handle_prctl(unsigned long option, unsigned long cmd,
          */
         if (!is_manager()) {
             extern void track_throne(bool prune_only);
-            pr_info("prctl: become_manager - running track_throne for uid=%d\n",
+            extern void ksu_invalidate_manager_uid(void);
+            /*
+             * Invalidate the current manager so track_throne will
+             * actually search /data/app for a valid manager APK.
+             * Without this, track_throne sees the OLD manager UID
+             * still present in packages.list and skips the search,
+             * making it impossible for a different manager APK
+             * (e.g. spoofed package) to take over.
+             * This is safe because search_manager verifies the APK
+             * certificate — only a properly signed APK gets crowned.
+             */
+            pr_info("prctl: become_manager - invalidating & re-searching for uid=%d\n",
                     current_uid().val);
+            ksu_invalidate_manager_uid();
             track_throne(false);
         }
         if (is_manager()) {
@@ -1217,11 +1235,28 @@ static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
     case CMD_SUSFS_SHOW_VERSION: {
         char __user *ver_p = (char __user *)arg2;
         if (ver_p)
-            (void)copy_to_user(ver_p, KERNEL_SU_VERSION_TAG, strlen(KERNEL_SU_VERSION_TAG) + 1);
+            (void)copy_to_user(ver_p, SUSFS_VERSION, strlen(SUSFS_VERSION) + 1);
         break;
     }
     case CMD_SUSFS_SHOW_ENABLED_FEATURES: {
         uint64_t __user *feat_p = (uint64_t __user *)arg2;
+        /*
+         * Bitmask must match susfsd's expected layout exactly:
+         * bit 0:  CONFIG_KSU_SUSFS_SUS_PATH
+         * bit 1:  CONFIG_KSU_SUSFS_SUS_MOUNT
+         * bit 2:  CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+         * bit 3:  CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+         * bit 4:  CONFIG_KSU_SUSFS_SUS_KSTAT
+         * bit 5:  CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+         * bit 6:  CONFIG_KSU_SUSFS_TRY_UMOUNT
+         * bit 7:  CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
+         * bit 8:  CONFIG_KSU_SUSFS_SPOOF_UNAME
+         * bit 9:  CONFIG_KSU_SUSFS_ENABLE_LOG
+         * bit 10: CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+         * bit 11: CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+         * bit 12: CONFIG_KSU_SUSFS_OPEN_REDIRECT
+         * bit 13: CONFIG_KSU_SUSFS_SUS_SU
+         */
         uint64_t features = 0;
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
         features |= (1 << 0);
@@ -1229,23 +1264,41 @@ static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
         features |= (1 << 1);
 #endif
-#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
         features |= (1 << 2);
 #endif
-#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
         features |= (1 << 3);
 #endif
-#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
         features |= (1 << 4);
 #endif
-#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+#ifdef CONFIG_KSU_SUSFS_SUS_OVERLAYFS
         features |= (1 << 5);
 #endif
-#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
         features |= (1 << 6);
 #endif
-#ifdef CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
         features |= (1 << 7);
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+        features |= (1 << 8);
+#endif
+#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+        features |= (1 << 9);
+#endif
+#ifdef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+        features |= (1 << 10);
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+        features |= (1 << 11);
+#endif
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+        features |= (1 << 12);
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_SU
+        features |= (1 << 13);
 #endif
         if (feat_p)
             (void)copy_to_user(feat_p, &features, sizeof(features));
