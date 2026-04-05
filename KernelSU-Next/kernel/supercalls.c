@@ -1027,7 +1027,7 @@ int ksu_handle_prctl(unsigned long option, unsigned long cmd,
                     current_uid().val);
             result_val = PRCTL_MAGIC;
             if (result_p)
-                copy_to_user(result_p, &result_val, sizeof(result_val));
+                (void)copy_to_user(result_p, &result_val, sizeof(result_val));
         } else {
             pr_info("prctl: become_manager rejected uid=%d path=%s\n",
                     current_uid().val, path);
@@ -1042,18 +1042,18 @@ int ksu_handle_prctl(unsigned long option, unsigned long cmd,
         if (ksuver_override)
             ver = ksuver_override;
         if (version_p)
-            copy_to_user(version_p, &ver, sizeof(ver));
+            (void)copy_to_user(version_p, &ver, sizeof(ver));
         if (lkm_p)
-            copy_to_user(lkm_p, &lkm, sizeof(lkm));
+            (void)copy_to_user(lkm_p, &lkm, sizeof(lkm));
         result_val = PRCTL_MAGIC;
         if (result_p)
-            copy_to_user(result_p, &result_val, sizeof(result_val));
+            (void)copy_to_user(result_p, &result_val, sizeof(result_val));
         break;
     }
     case PRCTL_CMD_CHECK_SAFEMODE: {
         result_val = PRCTL_MAGIC;
         if (result_p)
-            copy_to_user(result_p, &result_val, sizeof(result_val));
+            (void)copy_to_user(result_p, &result_val, sizeof(result_val));
         break;
     }
     case PRCTL_CMD_IS_UID_GRANTED_ROOT: {
@@ -1062,11 +1062,11 @@ int ksu_handle_prctl(unsigned long option, unsigned long cmd,
         int32_t __user *granted_p = (int32_t __user *)arg3;
         if (granted_p) {
             int32_t g = granted ? 1 : 0;
-            copy_to_user(granted_p, &g, sizeof(g));
+            (void)copy_to_user(granted_p, &g, sizeof(g));
         }
         result_val = PRCTL_MAGIC;
         if (result_p)
-            copy_to_user(result_p, &result_val, sizeof(result_val));
+            (void)copy_to_user(result_p, &result_val, sizeof(result_val));
         break;
     }
     case PRCTL_CMD_IS_UID_SHOULD_UMOUNT: {
@@ -1074,55 +1074,55 @@ int ksu_handle_prctl(unsigned long option, unsigned long cmd,
         bool should = ksu_uid_should_umount(uid);
         bool __user *should_p = (bool __user *)arg3;
         if (should_p)
-            copy_to_user(should_p, &should, sizeof(should));
+            (void)copy_to_user(should_p, &should, sizeof(should));
         result_val = PRCTL_MAGIC;
         if (result_p)
-            copy_to_user(result_p, &result_val, sizeof(result_val));
+            (void)copy_to_user(result_p, &result_val, sizeof(result_val));
         break;
     }
     case PRCTL_CMD_GET_APP_PROFILE: {
+        struct app_profile profile;
         if (!is_manager() && current_uid().val != 0)
             break;
-        struct app_profile profile;
         if (copy_from_user(&profile, (void __user *)arg2, sizeof(profile)))
             break;
         ksu_get_app_profile(&profile);
-        copy_to_user((void __user *)arg2, &profile, sizeof(profile));
+        (void)copy_to_user((void __user *)arg2, &profile, sizeof(profile));
         result_val = PRCTL_MAGIC;
         if (result_p)
-            copy_to_user(result_p, &result_val, sizeof(result_val));
+            (void)copy_to_user(result_p, &result_val, sizeof(result_val));
         break;
     }
     case PRCTL_CMD_SET_APP_PROFILE: {
+        struct app_profile profile;
         if (!is_manager() && current_uid().val != 0)
             break;
-        struct app_profile profile;
         if (copy_from_user(&profile, (void __user *)arg2, sizeof(profile)))
             break;
         ksu_set_app_profile(&profile);
         result_val = PRCTL_MAGIC;
         if (result_p)
-            copy_to_user(result_p, &result_val, sizeof(result_val));
+            (void)copy_to_user(result_p, &result_val, sizeof(result_val));
         break;
     }
     case PRCTL_CMD_HOOK_MODE: {
         char __user *mode_p = (char __user *)arg2;
         if (mode_p)
-            copy_to_user(mode_p, "tracepoint", 11);
+            (void)copy_to_user(mode_p, "tracepoint", 11);
         result_val = PRCTL_MAGIC;
         if (result_p)
-            copy_to_user(result_p, &result_val, sizeof(result_val));
+            (void)copy_to_user(result_p, &result_val, sizeof(result_val));
         break;
     }
     case PRCTL_CMD_IS_SU_ENABLED: {
         bool __user *enabled_p = (bool __user *)arg2;
         if (enabled_p) {
             bool enabled = ksu_su_compat_enabled;
-            copy_to_user(enabled_p, &enabled, sizeof(enabled));
+            (void)copy_to_user(enabled_p, &enabled, sizeof(enabled));
         }
         result_val = PRCTL_MAGIC;
         if (result_p)
-            copy_to_user(result_p, &result_val, sizeof(result_val));
+            (void)copy_to_user(result_p, &result_val, sizeof(result_val));
         break;
     }
     case PRCTL_CMD_ENABLE_SU: {
@@ -1132,7 +1132,7 @@ int ksu_handle_prctl(unsigned long option, unsigned long cmd,
         pr_info("prctl: su_compat set to %d\n", (int)arg2);
         result_val = PRCTL_MAGIC;
         if (result_p)
-            copy_to_user(result_p, &result_val, sizeof(result_val));
+            (void)copy_to_user(result_p, &result_val, sizeof(result_val));
         break;
     }
     default:
@@ -1176,7 +1176,7 @@ static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
     case CMD_SUSFS_SHOW_VERSION: {
         char __user *ver_p = (char __user *)arg2;
         if (ver_p)
-            copy_to_user(ver_p, KERNEL_SU_VERSION_TAG, strlen(KERNEL_SU_VERSION_TAG) + 1);
+            (void)copy_to_user(ver_p, KERNEL_SU_VERSION_TAG, strlen(KERNEL_SU_VERSION_TAG) + 1);
         break;
     }
     case CMD_SUSFS_SHOW_ENABLED_FEATURES: {
@@ -1207,13 +1207,13 @@ static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
         features |= (1 << 7);
 #endif
         if (feat_p)
-            copy_to_user(feat_p, &features, sizeof(features));
+            (void)copy_to_user(feat_p, &features, sizeof(features));
         break;
     }
     case CMD_SUSFS_SHOW_VARIANT: {
         char __user *var_p = (char __user *)arg2;
         if (var_p)
-            copy_to_user(var_p, "KSU-Next", 9);
+            (void)copy_to_user(var_p, "KSU-Next", 9);
         break;
     }
     case CMD_SUSFS_SHOW_SUS_SU_WORKING_MODE: {
@@ -1221,7 +1221,7 @@ static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
         int __user *mode_p = (int __user *)arg2;
         if (mode_p) {
             int mode = susfs_get_sus_su_working_mode();
-            copy_to_user(mode_p, &mode, sizeof(mode));
+            (void)copy_to_user(mode_p, &mode, sizeof(mode));
         }
         break;
     }
@@ -1230,7 +1230,7 @@ static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
         if (ready_p) {
             extern bool susfs_is_sus_su_hooks_enabled;
             int ready = susfs_is_sus_su_hooks_enabled ? 1 : 0;
-            copy_to_user(ready_p, &ready, sizeof(ready));
+            (void)copy_to_user(ready_p, &ready, sizeof(ready));
         }
         break;
     }
@@ -1311,7 +1311,7 @@ static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
     }
 
     if (result_p) {
-        copy_to_user(result_p, &result_val, sizeof(result_val));
+        (void)copy_to_user(result_p, &result_val, sizeof(result_val));
     }
 }
 #endif /* CONFIG_KSU_SUSFS */
@@ -1330,15 +1330,16 @@ static int prctl_handler_pre(struct kprobe *p, struct pt_regs *regs)
 {
     struct pt_regs *real_regs = PT_REAL_REGS(regs);
     unsigned long option = (unsigned long)PT_REGS_PARM1(real_regs);
+    unsigned long cmd, arg2, arg3, arg4;
 
     /* Quick check: only intercept our magic option */
     if (likely(option != PRCTL_MAGIC))
         return 0;
 
-    unsigned long cmd = (unsigned long)PT_REGS_PARM2(real_regs);
-    unsigned long arg2 = (unsigned long)PT_REGS_PARM3(real_regs);
-    unsigned long arg3 = (unsigned long)PT_REGS_SYSCALL_PARM4(real_regs);
-    unsigned long arg4 = (unsigned long)PT_REGS_PARM5(real_regs);
+    cmd = (unsigned long)PT_REGS_PARM2(real_regs);
+    arg2 = (unsigned long)PT_REGS_PARM3(real_regs);
+    arg3 = (unsigned long)PT_REGS_SYSCALL_PARM4(real_regs);
+    arg4 = (unsigned long)PT_REGS_PARM5(real_regs);
 
     ksu_handle_prctl(option, cmd, arg2, arg3, arg4);
     return 0;
