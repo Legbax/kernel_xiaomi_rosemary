@@ -1016,8 +1016,11 @@ int ksu_handle_prctl(unsigned long option, unsigned long cmd,
          * If throne_tracker already verified this app, is_manager() returns true.
          * Otherwise trigger track_throne() which reads packages.list, searches
          * /data/app for the manager APK, and verifies its signature.
+         *
+         * Always re-run track_throne if is_manager() fails — the manager UID
+         * may have changed after a reinstall (Android assigns a new UID).
          */
-        if (!is_manager() && !ksu_is_manager_appid_valid()) {
+        if (!is_manager()) {
             extern void track_throne(bool prune_only);
             pr_info("prctl: become_manager - running track_throne for uid=%d\n",
                     current_uid().val);
