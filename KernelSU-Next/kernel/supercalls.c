@@ -1051,6 +1051,40 @@ int ksu_handle_prctl(unsigned long option, unsigned long cmd,
             (void)copy_to_user(result_p, &result_val, sizeof(result_val));
         break;
     }
+    case PRCTL_CMD_GET_SU_LIST:
+    case PRCTL_CMD_GET_DENY_LIST: {
+        /* arg2 = int __user *uids, arg3 = int __user *size */
+        int __user *uids_p = (int __user *)arg2;
+        int __user *size_p = (int __user *)arg3;
+        int size = 0;
+        bool allow = (cmd == PRCTL_CMD_GET_SU_LIST);
+        u16 out_length = 0;
+
+        if (!is_manager() && current_uid().val != 0)
+            break;
+        if (size_p && copy_from_user(&size, size_p, sizeof(size)))
+            break;
+        if (size > 1024)
+            size = 1024;
+        if (size > 0 && uids_p) {
+            int *arr = kzalloc(sizeof(int) * size, GFP_KERNEL);
+            if (arr) {
+                ksu_get_allow_list(arr, (u16)size, &out_length, NULL, allow);
+                (void)copy_to_user(uids_p, arr, sizeof(int) * out_length);
+                kfree(arr);
+            }
+        } else {
+            ksu_get_allow_list(NULL, 0, &out_length, NULL, allow);
+        }
+        if (size_p) {
+            size = (int)out_length;
+            (void)copy_to_user(size_p, &size, sizeof(size));
+        }
+        result_val = PRCTL_MAGIC;
+        if (result_p)
+            (void)copy_to_user(result_p, &result_val, sizeof(result_val));
+        break;
+    }
     case PRCTL_CMD_CHECK_SAFEMODE: {
         result_val = PRCTL_MAGIC;
         if (result_p)
@@ -1109,7 +1143,7 @@ int ksu_handle_prctl(unsigned long option, unsigned long cmd,
     case PRCTL_CMD_HOOK_MODE: {
         char __user *mode_p = (char __user *)arg2;
         if (mode_p)
-            (void)copy_to_user(mode_p, "tracepoint", 11);
+            (void)copy_to_user(mode_p, "Kprobes", 8);
         result_val = PRCTL_MAGIC;
         if (result_p)
             (void)copy_to_user(result_p, &result_val, sizeof(result_val));
@@ -1152,12 +1186,15 @@ int ksu_handle_prctl(unsigned long option, unsigned long cmd,
 }
 
 #ifdef CONFIG_KSU_SUSFS
-/* Forward SUSFS prctl commands to the SUSFS subsystem */
+/* Forward SUSFS prctl commands to the SUSFS subsystem.
+ * NOTE: susfsd expects error=0 for success (NOT PRCTL_MAGIC).
+ * The manager's ksuctl() uses PRCTL_MAGIC, but susfsd checks !error.
+ */
 static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
                                    unsigned long arg3, int32_t __user *result_p)
 {
     int error = 0;
-    int32_t result_val = PRCTL_MAGIC;
+    int32_t result_val = 0; /* susfsd expects 0 = success */
 
     /* Only root can issue SUSFS commands (except read-only ones) */
     if (current_uid().val != 0) {
