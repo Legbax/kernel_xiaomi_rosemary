@@ -873,7 +873,7 @@ static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
 		}
 		case CMD_SUSFS_SHOW_ENABLED_FEATURES: {
 			/* struct: char features[8192]; int err; */
-			char *buf = kzalloc(SUSFS_REBOOT_FEATURES_BUFSIZE, GFP_KERNEL);
+			char *buf = kzalloc(SUSFS_REBOOT_FEATURES_BUFSIZE, GFP_ATOMIC);
 			int err_val = 0;
 			char *p;
 			if (!buf)
@@ -1128,20 +1128,8 @@ int ksu_handle_prctl(unsigned long option, unsigned long cmd,
          */
         if (!is_manager()) {
             extern void track_throne(bool prune_only);
-            extern void ksu_invalidate_manager_uid(void);
-            /*
-             * Invalidate the current manager so track_throne will
-             * actually search /data/app for a valid manager APK.
-             * Without this, track_throne sees the OLD manager UID
-             * still present in packages.list and skips the search,
-             * making it impossible for a different manager APK
-             * (e.g. spoofed package) to take over.
-             * This is safe because search_manager verifies the APK
-             * certificate — only a properly signed APK gets crowned.
-             */
-            pr_info("prctl: become_manager - invalidating & re-searching for uid=%d\n",
+            pr_info("prctl: become_manager - running track_throne for uid=%d\n",
                     current_uid().val);
-            ksu_invalidate_manager_uid();
             track_throne(false);
         }
         if (is_manager()) {
