@@ -984,6 +984,14 @@ static struct kprobe reboot_kp = {
 #define PRCTL_CMD_ENABLE_SU 15
 #define PRCTL_CMD_HOOK_MODE 16
 
+#include "sucompat.h"
+
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs_def.h>
+static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
+                                   unsigned long arg3, int32_t __user *result_p);
+#endif
+
 int ksu_handle_prctl(unsigned long option, unsigned long cmd,
                      unsigned long arg2, unsigned long arg3,
                      unsigned long arg4)
@@ -1106,13 +1114,207 @@ int ksu_handle_prctl(unsigned long option, unsigned long cmd,
             copy_to_user(result_p, &result_val, sizeof(result_val));
         break;
     }
+    case PRCTL_CMD_IS_SU_ENABLED: {
+        bool __user *enabled_p = (bool __user *)arg2;
+        if (enabled_p) {
+            bool enabled = ksu_su_compat_enabled;
+            copy_to_user(enabled_p, &enabled, sizeof(enabled));
+        }
+        result_val = PRCTL_MAGIC;
+        if (result_p)
+            copy_to_user(result_p, &result_val, sizeof(result_val));
+        break;
+    }
+    case PRCTL_CMD_ENABLE_SU: {
+        if (current_uid().val != 0 && !is_manager())
+            break;
+        ksu_su_compat_enabled = (bool)arg2;
+        pr_info("prctl: su_compat set to %d\n", (int)arg2);
+        result_val = PRCTL_MAGIC;
+        if (result_p)
+            copy_to_user(result_p, &result_val, sizeof(result_val));
+        break;
+    }
     default:
-        pr_info("prctl: unknown cmd %lu\n", cmd);
+        /* Forward SUSFS commands (0x555xx range) to SUSFS handlers */
+#ifdef CONFIG_KSU_SUSFS
+        if (cmd >= 0x55550 && cmd <= 0x60000) {
+            ksu_handle_prctl_susfs(cmd, arg2, arg3, result_p);
+            break;
+        }
+#endif
+        pr_info("prctl: unknown cmd %lu (0x%lx)\n", cmd, cmd);
         break;
     }
 
     return 0;
 }
+
+#ifdef CONFIG_KSU_SUSFS
+/* Forward SUSFS prctl commands to the SUSFS subsystem */
+static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
+                                   unsigned long arg3, int32_t __user *result_p)
+{
+    int error = 0;
+    int32_t result_val = PRCTL_MAGIC;
+
+    /* Only root can issue SUSFS commands (except read-only ones) */
+    if (current_uid().val != 0) {
+        switch (cmd) {
+        case CMD_SUSFS_SHOW_VERSION:
+        case CMD_SUSFS_SHOW_ENABLED_FEATURES:
+        case CMD_SUSFS_SHOW_VARIANT:
+        case CMD_SUSFS_SHOW_SUS_SU_WORKING_MODE:
+        case CMD_SUSFS_IS_SUS_SU_READY:
+            break; /* allowed for non-root */
+        default:
+            return; /* denied */
+        }
+    }
+
+    switch (cmd) {
+    case CMD_SUSFS_SHOW_VERSION: {
+        char __user *ver_p = (char __user *)arg2;
+        if (ver_p)
+            copy_to_user(ver_p, KERNEL_SU_VERSION_TAG, strlen(KERNEL_SU_VERSION_TAG) + 1);
+        break;
+    }
+    case CMD_SUSFS_SHOW_ENABLED_FEATURES: {
+        uint64_t __user *feat_p = (uint64_t __user *)arg2;
+        uint64_t features = 0;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+        features |= (1 << 0);
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+        features |= (1 << 1);
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+        features |= (1 << 2);
+#endif
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+        features |= (1 << 3);
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+        features |= (1 << 4);
+#endif
+#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+        features |= (1 << 5);
+#endif
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+        features |= (1 << 6);
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+        features |= (1 << 7);
+#endif
+        if (feat_p)
+            copy_to_user(feat_p, &features, sizeof(features));
+        break;
+    }
+    case CMD_SUSFS_SHOW_VARIANT: {
+        char __user *var_p = (char __user *)arg2;
+        if (var_p)
+            copy_to_user(var_p, "KSU-Next", 9);
+        break;
+    }
+    case CMD_SUSFS_SHOW_SUS_SU_WORKING_MODE: {
+        extern int susfs_get_sus_su_working_mode(void);
+        int __user *mode_p = (int __user *)arg2;
+        if (mode_p) {
+            int mode = susfs_get_sus_su_working_mode();
+            copy_to_user(mode_p, &mode, sizeof(mode));
+        }
+        break;
+    }
+    case CMD_SUSFS_IS_SUS_SU_READY: {
+        int __user *ready_p = (int __user *)arg2;
+        if (ready_p) {
+            extern bool susfs_is_sus_su_hooks_enabled;
+            int ready = susfs_is_sus_su_hooks_enabled ? 1 : 0;
+            copy_to_user(ready_p, &ready, sizeof(ready));
+        }
+        break;
+    }
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+    case CMD_SUSFS_ADD_SUS_PATH: {
+        extern int susfs_add_sus_path(void __user *);
+        error = susfs_add_sus_path((void __user *)arg2);
+        break;
+    }
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+    case CMD_SUSFS_ADD_SUS_MOUNT: {
+        extern int susfs_add_sus_mount(void __user *);
+        error = susfs_add_sus_mount((void __user *)arg2);
+        break;
+    }
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+    case CMD_SUSFS_ADD_SUS_KSTAT: {
+        extern int susfs_add_sus_kstat(void __user *);
+        error = susfs_add_sus_kstat((void __user *)arg2);
+        break;
+    }
+    case CMD_SUSFS_UPDATE_SUS_KSTAT: {
+        extern int susfs_update_sus_kstat(void __user *);
+        error = susfs_update_sus_kstat((void __user *)arg2);
+        break;
+    }
+#endif
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+    case CMD_SUSFS_ADD_TRY_UMOUNT: {
+        extern int susfs_add_try_umount(void __user *);
+        error = susfs_add_try_umount((void __user *)arg2);
+        break;
+    }
+    case CMD_SUSFS_RUN_UMOUNT_FOR_CURRENT_MNT_NS: {
+        extern void susfs_run_try_umount_for_current_mnt_ns(void);
+        susfs_run_try_umount_for_current_mnt_ns();
+        break;
+    }
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+    case CMD_SUSFS_SET_UNAME: {
+        extern int susfs_set_uname(void __user *);
+        error = susfs_set_uname((void __user *)arg2);
+        break;
+    }
+#endif
+#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+    case CMD_SUSFS_ENABLE_LOG: {
+        extern void susfs_set_log(bool);
+        susfs_set_log((bool)arg2);
+        break;
+    }
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+    case CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG: {
+        extern int susfs_set_cmdline_or_bootconfig(char __user *);
+        error = susfs_set_cmdline_or_bootconfig((char __user *)arg2);
+        break;
+    }
+#endif
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+    case CMD_SUSFS_ADD_OPEN_REDIRECT: {
+        extern int susfs_add_open_redirect(void __user *);
+        error = susfs_add_open_redirect((void __user *)arg2);
+        break;
+    }
+#endif
+    case CMD_SUSFS_SUS_SU: {
+        extern int susfs_sus_su(void __user *);
+        error = susfs_sus_su((void __user *)arg2);
+        break;
+    }
+    default:
+        pr_info("susfs: unknown cmd 0x%lx\n", cmd);
+        break;
+    }
+
+    if (result_p) {
+        copy_to_user(result_p, &result_val, sizeof(result_val));
+    }
+}
+#endif /* CONFIG_KSU_SUSFS */
 
 /*
  * kprobe handler for sys_prctl to intercept legacy manager prctl calls.
