@@ -834,6 +834,106 @@ static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
 	unsigned long arg4 = (unsigned long)PT_REGS_SYSCALL_PARM4(real_regs);
 	unsigned long reply = (unsigned long)arg4;
 
+	/*
+	 * SUSFS reboot-based command dispatch.
+	 * New susfsd (v3.1.0+) uses: syscall(SYS_reboot, 0xDEADBEEF, 0xFAFAFAFA, CMD, &struct)
+	 * Structs have an 'err' field that must be set to 0 on success.
+	 */
+#ifdef CONFIG_KSU_SUSFS
+#define SUSFS_MAGIC 0xFAFAFAFA
+#define SUSFS_REBOOT_VERSION_BUFSIZE 16
+#define SUSFS_REBOOT_VARIANT_BUFSIZE 16
+#define SUSFS_REBOOT_FEATURES_BUFSIZE 8192
+
+	if (magic1 == KSU_INSTALL_MAGIC1 && magic2 == SUSFS_MAGIC) {
+		void __user *uarg = (void __user *)arg4;
+
+		switch (cmd) {
+		case CMD_SUSFS_SHOW_VERSION: {
+			/* struct: char version[16]; int err; */
+			char buf[SUSFS_REBOOT_VERSION_BUFSIZE];
+			int err_val = 0;
+			memset(buf, 0, sizeof(buf));
+			strlcpy(buf, SUSFS_VERSION, sizeof(buf));
+			if (copy_to_user(uarg, buf, sizeof(buf)) ||
+			    copy_to_user(uarg + sizeof(buf), &err_val, sizeof(err_val)))
+				pr_err("susfs reboot: show_version copy failed\n");
+			return 0;
+		}
+		case CMD_SUSFS_SHOW_VARIANT: {
+			/* struct: char variant[16]; int err; */
+			char buf[SUSFS_REBOOT_VARIANT_BUFSIZE];
+			int err_val = 0;
+			memset(buf, 0, sizeof(buf));
+			strlcpy(buf, "KSU-Next", sizeof(buf));
+			if (copy_to_user(uarg, buf, sizeof(buf)) ||
+			    copy_to_user(uarg + sizeof(buf), &err_val, sizeof(err_val)))
+				pr_err("susfs reboot: show_variant copy failed\n");
+			return 0;
+		}
+		case CMD_SUSFS_SHOW_ENABLED_FEATURES: {
+			/* struct: char features[8192]; int err; */
+			char *buf = kzalloc(SUSFS_REBOOT_FEATURES_BUFSIZE, GFP_KERNEL);
+			int err_val = 0;
+			char *p;
+			if (!buf)
+				return 0;
+			p = buf;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_SUS_PATH\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_SUS_MOUNT\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_SUS_KSTAT\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_SUS_OVERLAYFS\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_TRY_UMOUNT\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_SPOOF_UNAME\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_ENABLE_LOG\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+#ifdef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_OPEN_REDIRECT\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_SU
+			p += strlcpy(p, "CONFIG_KSU_SUSFS_SUS_SU\n", SUSFS_REBOOT_FEATURES_BUFSIZE - (p - buf));
+#endif
+			if (copy_to_user(uarg, buf, SUSFS_REBOOT_FEATURES_BUFSIZE) ||
+			    copy_to_user(uarg + SUSFS_REBOOT_FEATURES_BUFSIZE, &err_val, sizeof(err_val)))
+				pr_err("susfs reboot: show_features copy failed\n");
+			kfree(buf);
+			return 0;
+		}
+		default:
+			pr_info("susfs reboot: unknown cmd 0x%x\n", cmd);
+			return 0;
+		}
+	}
+#endif /* CONFIG_KSU_SUSFS */
+
 	/* Check if this is a request to install KSU fd */
 	if (magic1 == KSU_INSTALL_MAGIC1 && magic2 == KSU_INSTALL_MAGIC2) {
 		struct ksu_install_fd_tw *tw;
