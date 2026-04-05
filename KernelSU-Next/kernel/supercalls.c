@@ -1332,34 +1332,29 @@ static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
 #endif
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
     case CMD_SUSFS_ADD_SUS_PATH: {
-        extern int susfs_add_sus_path(void __user *);
-        error = susfs_add_sus_path((void __user *)arg2);
+        error = susfs_add_sus_path((struct st_susfs_sus_path __user *)arg2);
         break;
     }
 #endif
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
     case CMD_SUSFS_ADD_SUS_MOUNT: {
-        extern int susfs_add_sus_mount(void __user *);
-        error = susfs_add_sus_mount((void __user *)arg2);
+        error = susfs_add_sus_mount((struct st_susfs_sus_mount __user *)arg2);
         break;
     }
 #endif
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
     case CMD_SUSFS_ADD_SUS_KSTAT: {
-        extern int susfs_add_sus_kstat(void __user *);
-        error = susfs_add_sus_kstat((void __user *)arg2);
+        error = susfs_add_sus_kstat((struct st_susfs_sus_kstat __user *)arg2);
         break;
     }
     case CMD_SUSFS_UPDATE_SUS_KSTAT: {
-        extern int susfs_update_sus_kstat(void __user *);
-        error = susfs_update_sus_kstat((void __user *)arg2);
+        error = susfs_update_sus_kstat((struct st_susfs_sus_kstat __user *)arg2);
         break;
     }
 #endif
 #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
     case CMD_SUSFS_ADD_TRY_UMOUNT: {
-        extern int susfs_add_try_umount(void __user *);
-        error = susfs_add_try_umount((void __user *)arg2);
+        error = susfs_add_try_umount((struct st_susfs_try_umount __user *)arg2);
         break;
     }
     case CMD_SUSFS_RUN_UMOUNT_FOR_CURRENT_MNT_NS: {
@@ -1370,36 +1365,31 @@ static void ksu_handle_prctl_susfs(unsigned long cmd, unsigned long arg2,
 #endif
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
     case CMD_SUSFS_SET_UNAME: {
-        extern int susfs_set_uname(void __user *);
-        error = susfs_set_uname((void __user *)arg2);
+        error = susfs_set_uname((struct st_susfs_uname __user *)arg2);
         break;
     }
 #endif
 #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
     case CMD_SUSFS_ENABLE_LOG: {
-        extern void susfs_set_log(bool);
         susfs_set_log((bool)arg2);
         break;
     }
 #endif
 #ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
     case CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG: {
-        extern int susfs_set_cmdline_or_bootconfig(char __user *);
         error = susfs_set_cmdline_or_bootconfig((char __user *)arg2);
         break;
     }
 #endif
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
     case CMD_SUSFS_ADD_OPEN_REDIRECT: {
-        extern int susfs_add_open_redirect(void __user *);
-        error = susfs_add_open_redirect((void __user *)arg2);
+        error = susfs_add_open_redirect((struct st_susfs_open_redirect __user *)arg2);
         break;
     }
 #endif
 #ifdef CONFIG_KSU_SUSFS_SUS_SU
     case CMD_SUSFS_SUS_SU: {
-        extern int susfs_sus_su(void __user *);
-        error = susfs_sus_su((void __user *)arg2);
+        error = susfs_sus_su((struct st_sus_su __user *)arg2);
         break;
     }
 #endif
